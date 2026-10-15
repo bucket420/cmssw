@@ -6,6 +6,7 @@ namespace mkfit {
 
     bool usePropToPlane = false;
     bool usePtMultScat = false;
+    bool useNativeCurvMaterial = false;
 
     // Multi threading configuration
 #if defined(MKFIT_STANDALONE)
