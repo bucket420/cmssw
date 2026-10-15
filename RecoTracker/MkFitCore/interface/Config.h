@@ -57,6 +57,9 @@ namespace mkfit {
     // constexpr bool usePtMultScat = true;
     extern bool usePropToPlane;
     extern bool usePtMultScat;
+    // Material effects for curvilinear errors: false = CCS terms projected to curvilinear (reproduces the
+    // CCS-error fit), true = computed natively in curvilinear (q/p, lambda, phi).
+    extern bool useNativeCurvMaterial;
 
     // Config for Bfield. Note: for now the same for CMS-phase1 and CylCowWLids.
     constexpr float Bfield = 3.8112;
