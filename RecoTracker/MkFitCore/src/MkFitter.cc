@@ -36,6 +36,7 @@ namespace mkfit {
     m_Chi2.setVal(0);
     mtp.pack(m_Err[iC], m_Par[iC]);
     m_Err[iC].scale(100.0f);
+    convertErrCCSToCurv(m_Err[iC], m_Par[iC], m_Chg, m_ErrCurv[iC]);
   }
 
   void MkFitter::bkReFitInputTracks(TrackVec &cands, std::vector<int> inds, int beg, int end) {
@@ -69,6 +70,7 @@ namespace mkfit {
 
     mtp.pack(m_Err[index], m_Par[index]);
     m_Err[index].scale(100.0f);
+    convertErrCCSToCurv(m_Err[index], m_Par[index], m_Chg, m_ErrCurv[index]);
   }
 
   void MkFitter::reFitOutputTracks(TrackVec &cands, std::vector<int> inds, int beg, int end, int nFoundHits, bool bkw) {
@@ -80,6 +82,8 @@ namespace mkfit {
       iO = iC;
     else
       iO = iP;
+
+    convertErrCurvToCCS(m_ErrCurv[iO], m_Par[iO], m_Chg, m_Err[iO]);
 
     int itrack = 0;
     for (int i = beg; i < end; ++i, ++itrack) {
@@ -333,7 +337,7 @@ namespace mkfit {
       }
 #endif
 
-      kalmanPropagateAndUpdateAndChi2Plane(m_Err[i1],
+      kalmanPropagateAndUpdateAndChi2Plane(m_ErrCurv[i1],
                                            m_Par[i1],
                                            m_Chg,
                                            m_msErr,
@@ -341,13 +345,12 @@ namespace mkfit {
                                            norm,
                                            dir,
                                            pnt,
-                                           m_Err[i2],
+                                           m_ErrCurv[i2],
                                            m_Par[i2],
                                            m_FailFlag,
                                            outChi2,
                                            N_proc,
                                            *refit_flags,
-                                           true,
                                            &no_mat_effs,
                                            &do_cpe,
                                            m_cpe_corr_func);
@@ -498,7 +501,7 @@ namespace mkfit {
       }
 #endif
 
-      kalmanPropagateAndUpdateAndChi2Plane(m_Err[i1],
+      kalmanPropagateAndUpdateAndChi2Plane(m_ErrCurv[i1],
                                            m_Par[i1],
                                            m_Chg,
                                            m_msErr,
@@ -506,13 +509,12 @@ namespace mkfit {
                                            norm,
                                            dir,
                                            pnt,
-                                           m_Err[i2],
+                                           m_ErrCurv[i2],
                                            m_Par[i2],
                                            m_FailFlag,
                                            outChi2,
                                            N_proc,
                                            *refit_flags,
-                                           true,
                                            &no_mat_effs,
                                            &do_cpe,
                                            m_cpe_corr_func);
