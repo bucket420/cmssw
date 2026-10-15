@@ -122,12 +122,15 @@ namespace {
   //*****************************************************************************************************
 
   //should kinv and D be templated???
+  // ErrPropT is MPlexLL for CCS errors (errorProp = jacCurv2CCS*errorPropCurv*jacCCS2Curv)
+  // or MPlex55 for curvilinear errors (errorProp = errorPropCurv)
+  template <class ErrPropT>
   void parsAndErrPropFromPathL_impl(const MPlexLV& __restrict__ inPar,
                                     const MPlexQI& __restrict__ inChg,
                                     MPlexLV& __restrict__ outPar,
                                     const MPlexQF& __restrict__ kinv,
                                     const MPlexQF& __restrict__ s,
-                                    MPlexLL& __restrict__ errorProp,
+                                    ErrPropT& __restrict__ errorProp,
                                     const int N_proc,
                                     const PropagationFlags& pf) {
     //iteration should return the path length s, then update parameters and compute errors
@@ -288,68 +291,72 @@ namespace {
     }
 #endif
 
-    //now we need jacobians to convert to/from curvilinear and CCS
-    // code from TrackState::jacobianCCSToCurvilinear
-    MPlex56 jacCCS2Curv(0.0f);
-    jacCCS2Curv.aij(0, 3) = mpt::negate_if_ltz(sinT, inChg);
-    jacCCS2Curv.aij(0, 5) = mpt::negate_if_ltz(cosT * inPar(3, 0), inChg);
-    jacCCS2Curv.aij(1, 5) = -1.f;
-    jacCCS2Curv.aij(2, 4) = 1.f;
-    jacCCS2Curv.aij(3, 0) = -sinPin;
-    jacCCS2Curv.aij(3, 1) = cosPin;
-    jacCCS2Curv.aij(4, 0) = -cosPin * cosT;
-    jacCCS2Curv.aij(4, 1) = -sinPin * cosT;
-    jacCCS2Curv.aij(4, 2) = sinT;
+    if constexpr (std::is_same_v<ErrPropT, MPlex55>) {
+      errorProp = errorPropCurv;
+    } else {
+      //now we need jacobians to convert to/from curvilinear and CCS
+      // code from TrackState::jacobianCCSToCurvilinear
+      MPlex56 jacCCS2Curv(0.0f);
+      jacCCS2Curv.aij(0, 3) = mpt::negate_if_ltz(sinT, inChg);
+      jacCCS2Curv.aij(0, 5) = mpt::negate_if_ltz(cosT * inPar(3, 0), inChg);
+      jacCCS2Curv.aij(1, 5) = -1.f;
+      jacCCS2Curv.aij(2, 4) = 1.f;
+      jacCCS2Curv.aij(3, 0) = -sinPin;
+      jacCCS2Curv.aij(3, 1) = cosPin;
+      jacCCS2Curv.aij(4, 0) = -cosPin * cosT;
+      jacCCS2Curv.aij(4, 1) = -sinPin * cosT;
+      jacCCS2Curv.aij(4, 2) = sinT;
 
-    // code from TrackState::jacobianCurvilinearToCCS
-    MPlex65 jacCurv2CCS(0.0f);
-    jacCurv2CCS.aij(0, 3) = -sinPout;
-    jacCurv2CCS.aij(0, 4) = -cosT * cosPout;
-    jacCurv2CCS.aij(1, 3) = cosPout;
-    jacCurv2CCS.aij(1, 4) = -cosT * sinPout;
-    jacCurv2CCS.aij(2, 4) = sinT;
-    jacCurv2CCS.aij(3, 0) = mpt::negate_if_ltz(1.f / sinT, inChg);
-    jacCurv2CCS.aij(3, 1) = outPar(3, 0) * cosT / sinT;
-    jacCurv2CCS.aij(4, 2) = 1.f;
-    jacCurv2CCS.aij(5, 1) = -1.f;
+      // code from TrackState::jacobianCurvilinearToCCS
+      MPlex65 jacCurv2CCS(0.0f);
+      jacCurv2CCS.aij(0, 3) = -sinPout;
+      jacCurv2CCS.aij(0, 4) = -cosT * cosPout;
+      jacCurv2CCS.aij(1, 3) = cosPout;
+      jacCurv2CCS.aij(1, 4) = -cosT * sinPout;
+      jacCurv2CCS.aij(2, 4) = sinT;
+      jacCurv2CCS.aij(3, 0) = mpt::negate_if_ltz(1.f / sinT, inChg);
+      jacCurv2CCS.aij(3, 1) = outPar(3, 0) * cosT / sinT;
+      jacCurv2CCS.aij(4, 2) = 1.f;
+      jacCurv2CCS.aij(5, 1) = -1.f;
 
-    //need to compute errorProp = jacCurv2CCS*errorPropCurv*jacCCS2Curv
-    MPlex65 tmp;
-    JacErrPropCurv1(jacCurv2CCS, errorPropCurv, tmp);
-    JacErrPropCurv2(tmp, jacCCS2Curv, errorProp);
-    /*
-    Matriplex::multiplyGeneral(jacCurv2CCS, errorPropCurv, tmp);
-    for (int kk = 0; kk < 1; ++kk) {
-      std::cout << "jacCurv2CCS" << std::endl;
-      for (int i = 0; i < 6; ++i) {
-      for (int j = 0; j < 5; ++j)
-        std::cout << jacCurv2CCS.constAt(kk, i, j) << " ";
-      std::cout << std::endl;;
+      //need to compute errorProp = jacCurv2CCS*errorPropCurv*jacCCS2Curv
+      MPlex65 tmp;
+      JacErrPropCurv1(jacCurv2CCS, errorPropCurv, tmp);
+      JacErrPropCurv2(tmp, jacCCS2Curv, errorProp);
+      /*
+      Matriplex::multiplyGeneral(jacCurv2CCS, errorPropCurv, tmp);
+      for (int kk = 0; kk < 1; ++kk) {
+        std::cout << "jacCurv2CCS" << std::endl;
+        for (int i = 0; i < 6; ++i) {
+        for (int j = 0; j < 5; ++j)
+          std::cout << jacCurv2CCS.constAt(kk, i, j) << " ";
+        std::cout << std::endl;;
+        }
+        std::cout << std::endl;;
+        std::cout << "errorPropCurv" << std::endl;
+        for (int i = 0; i < 5; ++i) {
+        for (int j = 0; j < 5; ++j)
+          std::cout << errorPropCurv.constAt(kk, i, j) << " ";
+        std::cout << std::endl;;
+        }
+        std::cout << std::endl;;
+        std::cout << "tmp" << std::endl;
+        for (int i = 0; i < 6; ++i) {
+        for (int j = 0; j < 5; ++j)
+          std::cout << tmp.constAt(kk, i, j) << " ";
+        std::cout << std::endl;;
+        }
+        std::cout << std::endl;;
+        std::cout << "jacCCS2Curv" << std::endl;
+        for (int i = 0; i < 5; ++i) {
+        for (int j = 0; j < 6; ++j)
+          std::cout << jacCCS2Curv.constAt(kk, i, j) << " ";
+        std::cout << std::endl;;
+        }
       }
-      std::cout << std::endl;;
-      std::cout << "errorPropCurv" << std::endl;
-      for (int i = 0; i < 5; ++i) {
-      for (int j = 0; j < 5; ++j)
-        std::cout << errorPropCurv.constAt(kk, i, j) << " ";
-      std::cout << std::endl;;
-      }
-      std::cout << std::endl;;
-      std::cout << "tmp" << std::endl;
-      for (int i = 0; i < 6; ++i) {
-      for (int j = 0; j < 5; ++j)
-        std::cout << tmp.constAt(kk, i, j) << " ";
-      std::cout << std::endl;;
-      }
-      std::cout << std::endl;;
-      std::cout << "jacCCS2Curv" << std::endl;
-      for (int i = 0; i < 5; ++i) {
-      for (int j = 0; j < 6; ++j)
-        std::cout << jacCCS2Curv.constAt(kk, i, j) << " ";
-      std::cout << std::endl;;
-      }
+      Matriplex::multiplyGeneral(tmp, jacCCS2Curv, errorProp);
+      */
     }
-    Matriplex::multiplyGeneral(tmp, jacCCS2Curv, errorProp);
-    */
   }
 
   // from P.Avery's notes (http://www.phys.ufl.edu/~avery/fitting/transport.pdf eq. 5)
@@ -383,13 +390,14 @@ namespace {
     return (std::abs(s1) > std::abs(s2) ? s2 : s1);
   }
 
+  template <class ErrPropT>
   void helixAtPlane_impl(const MPlexLV& __restrict__ inPar,
                          const MPlexQI& __restrict__ inChg,
                          const MPlexHV& __restrict__ plPnt,
                          const MPlexHV& __restrict__ plNrm,
                          MPlexQF& __restrict__ s,
                          MPlexLV& __restrict__ outPar,
-                         MPlexLL& __restrict__ errorProp,
+                         ErrPropT& __restrict__ errorProp,
                          MPlexQI& __restrict__ outFailFlag,  // expected to be initialized to 0
                          const int N_proc,
                          const PropagationFlags& pf) {
@@ -497,6 +505,32 @@ namespace {
       std::cout << "s=" << s[0] << std::endl;
 #endif
     parsAndErrPropFromPathL_impl(inPar, inChg, outPar, kinv, s, errorProp, N_proc, pf);
+  }
+
+  void materialAtPlane(const MPlexLV& outPar,
+                       const MPlexQF& pathL,
+                       const TrackerInfo& tinfo,
+                       const MPlexQI* noMatEffPtr,
+                       const int N_proc,
+                       MPlexQF& hitsRl,
+                       MPlexQF& hitsXi,
+                       MPlexQF& propSign) {
+#if !defined(__clang__)
+#pragma omp simd
+#endif
+    for (int n = 0; n < NN; ++n) {
+      if (n >= N_proc || (noMatEffPtr && noMatEffPtr->constAt(n, 0, 0))) {
+        hitsRl(n, 0, 0) = 0.f;
+        hitsXi(n, 0, 0) = 0.f;
+        propSign(n, 0, 0) = -1.f;
+      } else {
+        const float hypo = hipo(outPar(n, 0, 0), outPar(n, 1, 0));
+        const auto mat = tinfo.material_checked(std::abs(outPar(n, 2, 0)), hypo);
+        hitsRl(n, 0, 0) = mat.radl;
+        hitsXi(n, 0, 0) = mat.bbxi;
+        propSign(n, 0, 0) = (pathL(n, 0, 0) > 0.f ? 1.f : -1.f);
+      }
+    }
   }
 
 }  // namespace
@@ -647,24 +681,7 @@ namespace mkfit {
       MPlexQF hitsXi;
       MPlexQF propSign;
 
-      const TrackerInfo& tinfo = *pflags.tracker_info;
-
-#if !defined(__clang__)
-#pragma omp simd
-#endif
-      for (int n = 0; n < NN; ++n) {
-        if (n >= N_proc || (noMatEffPtr && noMatEffPtr->constAt(n, 0, 0))) {
-          hitsRl(n, 0, 0) = 0.f;
-          hitsXi(n, 0, 0) = 0.f;
-          propSign(n, 0, 0) = -1.f;
-        } else {
-          const float hypo = hipo(outPar(n, 0, 0), outPar(n, 1, 0));
-          const auto mat = tinfo.material_checked(std::abs(outPar(n, 2, 0)), hypo);
-          hitsRl(n, 0, 0) = mat.radl;
-          hitsXi(n, 0, 0) = mat.bbxi;
-          propSign(n, 0, 0) = (pathL(n, 0, 0) > 0.f ? 1.f : -1.f);
-        }
-      }
+      materialAtPlane(outPar, pathL, *pflags.tracker_info, noMatEffPtr, N_proc, hitsRl, hitsXi, propSign);
       applyMaterialEffects(hitsRl, hitsXi, propSign, plNrm, outErr, outPar, N_proc);
 #ifdef DEBUG
       if (debug && g_debug) {
@@ -703,6 +720,52 @@ namespace mkfit {
       }
     }
     // }
+  }
+
+  //==============================================================================
+  // Curvilinear error: inErr/outErr are 5x5 in (q/p, lambda, phi, x_perp, y_perp),
+  // parameters stay in CCS.
+  //==============================================================================
+
+  void propagateHelixToPlaneMPlex(const MPlex5S& inErr,
+                                  const MPlexLV& inPar,
+                                  const MPlexQI& inChg,
+                                  const MPlexHV& plPnt,
+                                  const MPlexHV& plNrm,
+                                  MPlex5S& outErr,
+                                  MPlexLV& outPar,
+                                  MPlexQI& outFailFlag,
+                                  const int N_proc,
+                                  const PropagationFlags& pflags,
+                                  const MPlexQI* noMatEffPtr) {
+    outErr = inErr;
+    outPar = inPar;
+
+    MPlexQF pathL{0.0f};
+    MPlex55 errorProp{0.0f};
+
+    outFailFlag.setVal(0.f);
+    helixAtPlane_impl(inPar, inChg, plPnt, plNrm, pathL, outPar, errorProp, outFailFlag, N_proc, pflags);
+
+    similarityCurv(errorProp, outErr, outErr);
+
+    if (pflags.apply_material) {
+      MPlexQF hitsRl;
+      MPlexQF hitsXi;
+      MPlexQF propSign;
+      materialAtPlane(outPar, pathL, *pflags.tracker_info, noMatEffPtr, N_proc, hitsRl, hitsXi, propSign);
+      applyMaterialEffects(hitsRl, hitsXi, propSign, plNrm, inChg, outErr, outPar, N_proc);
+    }
+
+    squashPhiMPlex(outPar, N_proc);  // ensure phi is between |pi|
+
+    // see PROP-FAIL-ENABLE above
+    for (int i = 0; i < N_proc; ++i) {
+      if (outFailFlag(i, 0, 0)) {
+        outPar.copySlot(i, inPar);
+        outErr.copySlot(i, inErr);
+      }
+    }
   }
 
 }  // namespace mkfit

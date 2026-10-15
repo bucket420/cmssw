@@ -121,6 +121,35 @@ namespace mkfit {
                             MPlexLV& outPar,
                             const int N_proc);
 
+  // Curvilinear error (q/p, lambda, phi, x_perp, y_perp); parameters stay in CCS.
+
+  void propagateHelixToPlaneMPlex(const MPlex5S& inErr,
+                                  const MPlexLV& inPar,
+                                  const MPlexQI& inChg,
+                                  const MPlexHV& plPnt,
+                                  const MPlexHV& plNrm,
+                                  MPlex5S& outErr,
+                                  MPlexLV& outPar,
+                                  MPlexQI& outFailFlag,
+                                  const int N_proc,
+                                  const PropagationFlags& pflags,
+                                  const MPlexQI* noMatEffPtr = nullptr);
+
+  void applyMaterialEffects(const MPlexQF& hitsRl,
+                            const MPlexQF& hitsXi,
+                            const MPlexQF& propSign,
+                            const MPlexHV& plNrm,
+                            const MPlexQI& inChg,
+                            MPlex5S& outErr,
+                            MPlexLV& outPar,
+                            const int N_proc);
+
+  void similarityCurv(const MPlex55& A, const MPlex5S& B, MPlex5S& C);
+  void jacobianCCSToCurv(const MPlexLV& par, const MPlexQI& chg, MPlex56& jac);
+  void jacobianCurvToCCS(const MPlexLV& par, const MPlexQI& chg, MPlex65& jac);
+  void convertErrCCSToCurv(const MPlexLS& inErr, const MPlexLV& par, const MPlexQI& chg, MPlex5S& outErr);
+  void convertErrCurvToCCS(const MPlex5S& inErr, const MPlexLV& par, const MPlexQI& chg, MPlexLS& outErr);
+
   void MultHelixPropFull(const MPlexLL& A, const MPlexLS& B, MPlexLL& C);
   void MultHelixPropTranspFull(const MPlexLL& A, const MPlexLL& B, MPlexLS& C);
 

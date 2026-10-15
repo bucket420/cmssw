@@ -227,5 +227,41 @@ namespace mkfit {
                                  const MPlexQI* doCPE = nullptr,
                                  cpe_func cpe_corr_func = nullptr);
 
+  // Curvilinear error (q/p, lambda, phi, x_perp, y_perp); parameters stay in CCS.
+
+  void kalmanOperationPlaneLocal(const int kfOp,
+                                 const MPlex5S& psErr,
+                                 const MPlexLV& psPar,
+                                 const MPlexQI& Chg,
+                                 const MPlexHS& msErr,
+                                 const MPlexHV& msPar,
+                                 const MPlexHV& plNrm,
+                                 const MPlexHV& plDir,
+                                 const MPlexHV& plPnt,
+                                 MPlex5S& outErr,
+                                 MPlexLV& outPar,
+                                 MPlexQF& outChi2,
+                                 const int N_proc,
+                                 const MPlexQI* doCPE = nullptr,
+                                 cpe_func cpe_corr_func = nullptr);
+
+  void kalmanPropagateAndUpdateAndChi2Plane(const MPlex5S& psErr,
+                                            const MPlexLV& psPar,
+                                            MPlexQI& Chg,
+                                            const MPlexHS& msErr,
+                                            const MPlexHV& msPar,
+                                            const MPlexHV& plNrm,
+                                            const MPlexHV& plDir,
+                                            const MPlexHV& plPnt,
+                                            MPlex5S& outErr,
+                                            MPlexLV& outPar,
+                                            MPlexQI& outFailFlag,
+                                            MPlexQF& outChi2,
+                                            const int N_proc,
+                                            const PropagationFlags& propFlags,
+                                            const MPlexQI* noMatEffPtr = nullptr,
+                                            const MPlexQI* doCPE = nullptr,
+                                            cpe_func cpe_corr_func = nullptr);
+
 }  // end namespace mkfit
 #endif
