@@ -747,7 +747,7 @@ namespace mkfit {
     outFailFlag.setVal(0.f);
     helixAtPlane_impl(inPar, inChg, plPnt, plNrm, pathL, outPar, errorProp, outFailFlag, N_proc, pflags);
 
-    similarityCurv(errorProp, outErr, outErr);
+    similarityCurvProp(errorProp, outErr, outErr);
 
     if (pflags.apply_material) {
       MPlexQF hitsRl;
