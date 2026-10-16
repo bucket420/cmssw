@@ -22,19 +22,20 @@ namespace mkfit {
 
     //----------------------------------------------------------------------------
 
-    void fwdFitInputTracks(TrackVec &cands, std::vector<int> inds, int beg, int end);
+    void fwdFitInputTracks(TrackVec &cands, const std::vector<int> &inds, int beg, int end);
     void fwdFitFitTracks(const EventOfHits &eventofhits,
                          const int N_proc,
                          int nFoundHits,
-                         std::vector<std::vector<int>> indices_R2Z,
+                         const std::vector<std::vector<int>> &indices_R2Z,
                          float *chi2);
-    void bkReFitInputTracks(TrackVec &cands, std::vector<int> inds, int beg, int end);
+    void bkReFitInputTracks(TrackVec &cands, const std::vector<int> &inds, int beg, int end);
     void bkReFitFitTracks(const EventOfHits &eventofhits,
                           const int N_proc,
                           int nFoundHits,
-                          std::vector<std::vector<int>> indices_R2Z,
+                          const std::vector<std::vector<int>> &indices_R2Z,
                           float *chi2);
-    void reFitOutputTracks(TrackVec &cands, std::vector<int> inds, int beg, int end, int nFoundHits, bool bkw = false);
+    void reFitOutputTracks(
+        TrackVec &cands, const std::vector<int> &inds, int beg, int end, int nFoundHits, bool bkw = false);
     std::vector<std::vector<int>> reFitIndices(const EventOfHits &eventofhits, const int N_proc, int nFoundHits);
 
     void set_cpe(cpe_func cpe_function) { m_cpe_corr_func = cpe_function; };
