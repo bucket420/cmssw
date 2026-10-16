@@ -8,11 +8,12 @@
 //#define DEBUG_FIT_BKW
 #include "Debug.h"
 
+#include <algorithm>
 #include <sstream>
 
 namespace mkfit {
 
-  void MkFitter::fwdFitInputTracks(TrackVec &cands, std::vector<int> inds, int beg, int end) {
+  void MkFitter::fwdFitInputTracks(TrackVec &cands, const std::vector<int> &inds, int beg, int end) {
     // Uses HitOnTrack vector from Track directly + a local cursor array to current hit.
 #ifdef DEBUG_FIT_BKW
     std::cout << " -- fwdFitInputTracks " << std::endl;
@@ -39,7 +40,7 @@ namespace mkfit {
     convertErrCCSToCurv(m_Err[iC], m_Par[iC], m_Chg, m_ErrCurv[iC]);
   }
 
-  void MkFitter::bkReFitInputTracks(TrackVec &cands, std::vector<int> inds, int beg, int end) {
+  void MkFitter::bkReFitInputTracks(TrackVec &cands, const std::vector<int> &inds, int beg, int end) {
     // Uses HitOnTrack vector from Track directly + a local cursor array to current hit.
 #ifdef DEBUG_FIT_BKW
     std::cout << " -- bkReFitInputTracks " << std::endl;
@@ -73,7 +74,8 @@ namespace mkfit {
     convertErrCCSToCurv(m_Err[index], m_Par[index], m_Chg, m_ErrCurv[index]);
   }
 
-  void MkFitter::reFitOutputTracks(TrackVec &cands, std::vector<int> inds, int beg, int end, int nFoundHits, bool bkw) {
+  void MkFitter::reFitOutputTracks(
+      TrackVec &cands, const std::vector<int> &inds, int beg, int end, int nFoundHits, bool bkw) {
     // Only copy out track params / errors / chi2
     if (bkw)
       nFoundHits = nFoundHits * 2;
@@ -136,10 +138,15 @@ namespace mkfit {
                                                        const int N_proc,
                                                        int nFoundHits) {
     std::vector<std::vector<int>> indices_R2Z;
+    indices_R2Z.reserve(N_proc);
 
+    std::vector<std::pair<float, float>> r2z;
+    std::vector<int> indices;
+    std::vector<std::pair<float, int>> keyed;
     for (int i = 0; i < N_proc; ++i) {
-      std::vector<std::pair<float, float>> r2z;
-      std::vector<int> indices;
+      r2z.clear();
+      indices.clear();
+      keyed.clear();
 
       float minR2 = std::numeric_limits<float>::max();
       float z_minR = 0;
@@ -176,8 +183,7 @@ namespace mkfit {
         local_m--;
       }
       //continue working with the track
-      std::map<float, std::vector<int>> index_RorZ;
-      std::vector<int> sorted_indices;
+      // order by the key -R2 - dz^2 (dz w.r.t. the innermost hit); stable, so equal keys keep their order
       for (int i = 0; i < (int)r2z.size(); i++) {
         float r2 = r2z[i].first > 0 ? r2z[i].first : -r2z[i].first;
         float z = r2z[i].second - z_minR;
@@ -185,21 +191,14 @@ namespace mkfit {
         std::cout << "SORTING by 3dR" << "R2 " << r2z[i].first << " z " << r2z[i].second << " z0 " << z_minR
                   << " check " << -r2 - z * z << std::endl;
 #endif
-        index_RorZ[-r2 - z * z].push_back(indices[i]);
+        keyed.emplace_back(-r2 - z * z, indices[i]);
       }
-      for (const auto &iRZ : index_RorZ)  //one segment
-        for (auto iiRZ : iRZ.second)
-          sorted_indices.push_back(iiRZ);
+      std::stable_sort(keyed.begin(), keyed.end(), [](const auto &a, const auto &b) { return a.first < b.first; });
+      std::vector<int> sorted_indices;
+      sorted_indices.reserve(keyed.size());
+      for (const auto &k : keyed)
+        sorted_indices.push_back(k.second);
 
-      if (indices.size() != sorted_indices.size()) {
-        std::cout << indices.size() << "  " << sorted_indices.size() << std::endl;
-        for (auto ii : indices) {
-          std::cout << " indices ii " << ii << std::endl;
-        }
-        for (auto ii : sorted_indices) {
-          std::cout << " indices ssii " << ii << std::endl;
-        }
-      }
 #ifdef DEBUG_FIT
       std::cout << " check_size " << (indices.size() == sorted_indices.size()) << std::endl;
       for (auto ii : indices) {
@@ -209,7 +208,7 @@ namespace mkfit {
         std::cout << " indices ssii " << ii << std::endl;
       }
 #endif
-      indices_R2Z.push_back(sorted_indices);  //sorted_indices
+      indices_R2Z.push_back(std::move(sorted_indices));
     }
     return indices_R2Z;
   }
@@ -217,7 +216,7 @@ namespace mkfit {
   void MkFitter::fwdFitFitTracks(const EventOfHits &eventofhits,
                                  const int N_proc,
                                  int nFoundHits,
-                                 std::vector<std::vector<int>> indices_R2Z,
+                                 const std::vector<std::vector<int>> &indices_R2Z,
                                  float *chi2) {
     MPlexQF outChi2(0.0f);
     MPlexLV propPar;
@@ -384,7 +383,7 @@ namespace mkfit {
   void MkFitter::bkReFitFitTracks(const EventOfHits &eventofhits,
                                   const int N_proc,
                                   int nFoundHits,
-                                  std::vector<std::vector<int>> indices_R2Z,
+                                  const std::vector<std::vector<int>> &indices_R2Z,
                                   float *chi2) {
 #ifdef DEBUG_FIT_BKW
     std::cout << "bkReFitFitTracks " << nFoundHits << std::endl;
@@ -426,9 +425,10 @@ namespace mkfit {
 
       for (int i = 0; i < N_proc; ++i)  //loop over tracks in group
       {
-        auto indices = indices_R2Z[i];
-        std::reverse(indices.begin(), indices.end());
-        int index = indices[hitIndex[i] - 1];
+        // hits are used in the reverse order of indices_R2Z[i]
+        const auto &indices = indices_R2Z[i];
+        const int nIdx = indices.size();
+        int index = indices[nIdx - hitIndex[i]];
 #ifdef DEBUG_FIT_BKW
         std::cout << "DEBUG hitIndex " << hitIndex[i] << std::endl;
         std::cout << "DEBUG i " << index << std::endl;
@@ -470,11 +470,11 @@ namespace mkfit {
           std::cout << "at the track " << i << " / " << N_proc << " check the material " << std::endl;
 
           std::cout << "at the hit " << index << " Don't remove the material" << std::endl;
-          if (hitIndex[i] < (int)indices.size())
+          if (hitIndex[i] < nIdx)
             std::cout << "layers are " << m_HoTArr[i][index].layer << " and  "
-                      << m_HoTArr[i][indices[hitIndex[i]]].layer << std::endl;
+                      << m_HoTArr[i][indices[nIdx - 1 - hitIndex[i]]].layer << std::endl;
 #endif
-          if (index == indices.back())
+          if (index == indices.front())
             no_mat_effs[i] = 1;
         }
         hitIndex[i]--;
