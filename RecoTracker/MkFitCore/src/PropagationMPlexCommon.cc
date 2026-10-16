@@ -195,31 +195,63 @@ namespace mkfit {
   // Curvilinear error helpers
   //==============================================================================
 
-  // C = A * B * A^T ; C may alias B
-  void similarityCurv(const MPlex55& A, const MPlex5S& B, MPlex5S& C) {
-    MPlex55 temp;
+  namespace {
+    // Non-zero patterns of the 5x5 jacobians acting on curvilinear errors.
+    // Transport in curvilinear coordinates (errorPropCurv in PropagationMPlexPlane.cc)
+    constexpr int kNZCurvProp[5][5] = {
+        {1, 0, 0, 0, 0}, {0, 1, 1, 0, 0}, {1, 1, 1, 1, 1}, {1, 1, 1, 1, 1}, {1, 1, 1, 1, 1}};
+    // jacCurv2Loc in kalmanOperationPlaneLocal
+    constexpr int kNZCurv2Loc[5][5] = {
+        {1, 0, 0, 0, 0}, {0, 1, 1, 1, 1}, {0, 1, 1, 1, 1}, {0, 0, 0, 1, 1}, {0, 0, 0, 1, 1}};
+    // jacLoc2Curv in kalmanOperationPlaneLocal
+    constexpr int kNZLoc2Curv[5][5] = {
+        {1, 0, 0, 0, 0}, {0, 1, 1, 0, 0}, {0, 1, 1, 1, 1}, {0, 0, 0, 1, 1}, {0, 0, 0, 1, 1}};
+
+    // C = A * B * A^T, skipping the structural zeros of A; C may alias B
+    template <const int (&NZ)[5][5]>
+    void similarityCurvSparse(const MPlex55& A, const MPlex5S& B, MPlex5S& C) {
+      MPlex55 temp;
 #pragma omp simd
-    for (int n = 0; n < NN; ++n) {
-      for (int i = 0; i < 5; ++i) {
-        for (int j = 0; j < 5; ++j) {
-          float sum = 0.f;
-          for (int k = 0; k < 5; ++k)
-            sum += A.constAt(n, i, k) * B.constAt(n, k, j);
-          temp(n, i, j) = sum;
+      for (int n = 0; n < NN; ++n) {
+#pragma GCC unroll 5
+        for (int i = 0; i < 5; ++i) {
+#pragma GCC unroll 5
+          for (int j = 0; j < 5; ++j) {
+            float sum = 0.f;
+#pragma GCC unroll 5
+            for (int k = 0; k < 5; ++k)
+              if (NZ[i][k])
+                sum += A.constAt(n, i, k) * B.constAt(n, k, j);
+            temp(n, i, j) = sum;
+          }
+        }
+      }
+#pragma omp simd
+      for (int n = 0; n < NN; ++n) {
+#pragma GCC unroll 5
+        for (int i = 0; i < 5; ++i) {
+#pragma GCC unroll 5
+          for (int j = 0; j <= i; ++j) {
+            float sum = 0.f;
+#pragma GCC unroll 5
+            for (int k = 0; k < 5; ++k)
+              if (NZ[j][k])
+                sum += temp.constAt(n, i, k) * A.constAt(n, j, k);
+            C(n, i, j) = sum;
+          }
         }
       }
     }
-#pragma omp simd
-    for (int n = 0; n < NN; ++n) {
-      for (int i = 0; i < 5; ++i) {
-        for (int j = 0; j <= i; ++j) {
-          float sum = 0.f;
-          for (int k = 0; k < 5; ++k)
-            sum += temp.constAt(n, i, k) * A.constAt(n, j, k);
-          C(n, i, j) = sum;
-        }
-      }
-    }
+  }  // namespace
+
+  void similarityCurvProp(const MPlex55& A, const MPlex5S& B, MPlex5S& C) {
+    similarityCurvSparse<kNZCurvProp>(A, B, C);
+  }
+  void similarityCurv2Loc(const MPlex55& A, const MPlex5S& B, MPlex5S& C) {
+    similarityCurvSparse<kNZCurv2Loc>(A, B, C);
+  }
+  void similarityLoc2Curv(const MPlex55& A, const MPlex5S& B, MPlex5S& C) {
+    similarityCurvSparse<kNZLoc2Curv>(A, B, C);
   }
 
   // Jacobian from CCS (x, y, z, 1/pT, phi, theta) to curvilinear (q/p, lambda, phi, x_perp, y_perp),

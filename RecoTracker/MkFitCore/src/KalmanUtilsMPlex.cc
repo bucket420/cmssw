@@ -1676,7 +1676,7 @@ namespace mkfit {
       PsErrLoc(jacCCS2Loc, psErr, temp56);
       PsErrLocTransp(temp56, jacCCS2Loc, psErrLoc);
     } else {
-      similarityCurv(jacCurv2Loc, psErr, psErrLoc);
+      similarityCurv2Loc(jacCurv2Loc, psErr, psErrLoc);
     }
 
     MPlexHV md;
@@ -1900,7 +1900,8 @@ namespace mkfit {
       for (int n = 0; n < NN; ++n) {
         if (std::signbit(lp_upd(n, 0, 0)) != std::signbit(lp(n, 0, 0))) {
           outPar(n, 0, 3) = -outPar(n, 0, 3);
-          jacCurv2CCS(n, 3, 0) = -jacCurv2CCS(n, 3, 0);
+          if constexpr (std::is_same_v<ErrT, MPlexLS>)
+            jacCurv2CCS(n, 3, 0) = -jacCurv2CCS(n, 3, 0);
         }
       }
 
@@ -1961,7 +1962,7 @@ namespace mkfit {
         OutErrCCSTransp(temp65, jacLoc2CCS, outErr);
       } else {
         // curvilinear error
-        similarityCurv(jacLoc2Curv, psErrLoc_upd, outErr);
+        similarityLoc2Curv(jacLoc2Curv, psErrLoc_upd, outErr);
       }
 
       /*
