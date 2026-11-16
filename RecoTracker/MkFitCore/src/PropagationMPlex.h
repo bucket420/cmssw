@@ -183,6 +183,16 @@ namespace mkfit {
   void convertErrCCSToCurv(const MPlexLS& inErr, const MPlexLV& par, const MPlexQI& chg, MPlex5S& outErr);
   void convertErrCurvToCCS(const MPlex5S& inErr, const MPlexLV& par, const MPlexQI& chg, MPlexLS& outErr);
 
+  // Curvilinear track errors are stored in the first 15 elements of the 6x6 storage, the rest zero
+  // (Config::useCurvTrackErrors). Packed into an MPlexLS, the 5x5 is its first 15 elements.
+  inline void copyErrCurvFromLS(const MPlexLS& in, MPlex5S& out) {
+    std::copy(in.fArray, in.fArray + MPlex5S::kTotSize, out.fArray);
+  }
+  inline void copyOutErrCurv(const MPlex5S& err, const int i, float* out) {
+    err.copyOut(i, out);
+    std::fill(out + MPlex5S::kSize, out + MPlexLS::kSize, 0.f);
+  }
+
   void MultHelixPropFull(const MPlexLL& A, const MPlexLS& B, MPlexLL& C);
   void MultHelixPropTranspFull(const MPlexLL& A, const MPlexLL& B, MPlexLS& C);
 
