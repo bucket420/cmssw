@@ -126,12 +126,11 @@ namespace mkfit {
 
   // Curvilinear error (q/p, lambda, phi, x_perp, y_perp); parameters stay in CCS.
 
-  // Material effects on a curvilinear error: the CCS terms of applyMaterialEffects() projected to curvilinear.
+  // Material effects on a curvilinear error, computed in curvilinear coordinates.
   void applyMaterialEffects(const MPlexQF& hitsRl,
                             const MPlexQF& hitsXi,
                             const MPlexQF& propSign,
                             const MPlexHV& plNrm,
-                            const MPlexQI& inChg,
                             MPlex5S& outErr,
                             MPlexLV& outPar,
                             const int N_proc,

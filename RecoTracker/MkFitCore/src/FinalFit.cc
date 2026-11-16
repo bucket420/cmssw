@@ -276,10 +276,7 @@ namespace mkfit::final_fit {
           eloss_sign_from_path(MPlexQF(pass.outward ? 1.f : -1.f), noMatEffPtr, in.n_proc, m);
         else
           eloss_sign_from_path(s, noMatEffPtr, in.n_proc, m);
-        if constexpr (std::is_same_v<ErrT, MPlex5S>)
-          apply_material(m, plNrm, in.chg, outErr, outPar, in.n_proc, pass.ms_ref_p);
-        else
-          apply_material(m, plNrm, outErr, outPar, in.n_proc, pass.ms_ref_p);
+        apply_material(m, plNrm, outErr, outPar, in.n_proc, pass.ms_ref_p);
       }
 
       finish(in, inErr, outFailFlag, outPar, outErr);

@@ -643,14 +643,9 @@ namespace mkfit::plane {
     applyMaterialEffects(m.radl, m.xi, m.sign, plNrm, err, par, N_proc, ms_ref_p);
   }
 
-  void apply_material(const MaterialAt& m,
-                      const MPlexHV& plNrm,
-                      const MPlexQI& chg,
-                      MPlex5S& err,
-                      MPlexLV& par,
-                      const int N_proc,
-                      const float* ms_ref_p) {
-    applyMaterialEffects(m.radl, m.xi, m.sign, plNrm, chg, err, par, N_proc, ms_ref_p);
+  void apply_material(
+      const MaterialAt& m, const MPlexHV& plNrm, MPlex5S& err, MPlexLV& par, const int N_proc, const float* ms_ref_p) {
+    applyMaterialEffects(m.radl, m.xi, m.sign, plNrm, err, par, N_proc, ms_ref_p);
   }
 
   template <class ErrT>
