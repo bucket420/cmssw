@@ -171,4 +171,222 @@ namespace mkfit {
     }
   }
 
+  //==============================================================================
+  // Curvilinear error helpers
+  //==============================================================================
+
+  namespace {
+    // Non-zero patterns of the 5x5 jacobians acting on curvilinear errors.
+    // Transport in curvilinear coordinates (errorPropCurv in PropagationMPlexPlane.cc)
+    constexpr int kNZCurvProp[5][5] = {
+        {1, 0, 0, 0, 0}, {0, 1, 1, 0, 0}, {1, 1, 1, 1, 1}, {1, 1, 1, 1, 1}, {1, 1, 1, 1, 1}};
+    // jacCurv2Loc in plane::to_local()
+    constexpr int kNZCurv2Loc[5][5] = {
+        {1, 0, 0, 0, 0}, {0, 1, 1, 1, 1}, {0, 1, 1, 1, 1}, {0, 0, 0, 1, 1}, {0, 0, 0, 1, 1}};
+    // jacLoc2Curv in plane::to_global()
+    constexpr int kNZLoc2Curv[5][5] = {
+        {1, 0, 0, 0, 0}, {0, 1, 1, 0, 0}, {0, 1, 1, 1, 1}, {0, 0, 0, 1, 1}, {0, 0, 0, 1, 1}};
+
+    // C = A * B * A^T, skipping the structural zeros of A; C may alias B
+    template <const int (&NZ)[5][5]>
+    void similarityCurvSparse(const MPlex55& A, const MPlex5S& B, MPlex5S& C) {
+      MPlex55 temp;
+#pragma omp simd
+      for (int n = 0; n < NN; ++n) {
+#pragma GCC unroll 5
+        for (int i = 0; i < 5; ++i) {
+#pragma GCC unroll 5
+          for (int j = 0; j < 5; ++j) {
+            float sum = 0.f;
+#pragma GCC unroll 5
+            for (int k = 0; k < 5; ++k)
+              if (NZ[i][k])
+                sum += A.constAt(n, i, k) * B.constAt(n, k, j);
+            temp(n, i, j) = sum;
+          }
+        }
+      }
+#pragma omp simd
+      for (int n = 0; n < NN; ++n) {
+#pragma GCC unroll 5
+        for (int i = 0; i < 5; ++i) {
+#pragma GCC unroll 5
+          for (int j = 0; j <= i; ++j) {
+            float sum = 0.f;
+#pragma GCC unroll 5
+            for (int k = 0; k < 5; ++k)
+              if (NZ[j][k])
+                sum += temp.constAt(n, i, k) * A.constAt(n, j, k);
+            C(n, i, j) = sum;
+          }
+        }
+      }
+    }
+  }  // namespace
+
+  void similarityCurvProp(const MPlex55& A, const MPlex5S& B, MPlex5S& C) {
+    similarityCurvSparse<kNZCurvProp>(A, B, C);
+  }
+  void similarityCurv2Loc(const MPlex55& A, const MPlex5S& B, MPlex5S& C) {
+    similarityCurvSparse<kNZCurv2Loc>(A, B, C);
+  }
+  void similarityLoc2Curv(const MPlex55& A, const MPlex5S& B, MPlex5S& C) {
+    similarityCurvSparse<kNZLoc2Curv>(A, B, C);
+  }
+
+  // Jacobian from CCS (x, y, z, 1/pT, phi, theta) to curvilinear (q/p, lambda, phi, x_perp, y_perp),
+  // see TrackState::jacobianCCSToCurvilinear
+  void jacobianCCSToCurv(const MPlexLV& par, const MPlexQI& chg, MPlex56& jac) {
+    namespace mpt = Matriplex;
+    using MPF = MPlexQF;
+    MPF sinP, cosP;
+    mpt::fast_sincos(par(4, 0), sinP, cosP);
+    MPF sinT, cosT;
+    mpt::fast_sincos(par(5, 0), sinT, cosT);
+    jac.setVal(0.f);
+    jac.aij(0, 3) = mpt::negate_if_ltz(sinT, chg);
+    jac.aij(0, 5) = mpt::negate_if_ltz(cosT * par(3, 0), chg);
+    jac.aij(1, 5) = -1.f;
+    jac.aij(2, 4) = 1.f;
+    jac.aij(3, 0) = -sinP;
+    jac.aij(3, 1) = cosP;
+    jac.aij(4, 0) = -cosP * cosT;
+    jac.aij(4, 1) = -sinP * cosT;
+    jac.aij(4, 2) = sinT;
+  }
+
+  // Jacobian from curvilinear to CCS, see TrackState::jacobianCurvilinearToCCS
+  void jacobianCurvToCCS(const MPlexLV& par, const MPlexQI& chg, MPlex65& jac) {
+    namespace mpt = Matriplex;
+    using MPF = MPlexQF;
+    MPF sinP, cosP;
+    mpt::fast_sincos(par(4, 0), sinP, cosP);
+    MPF sinT, cosT;
+    mpt::fast_sincos(par(5, 0), sinT, cosT);
+    jac.setVal(0.f);
+    jac.aij(0, 3) = -sinP;
+    jac.aij(0, 4) = -cosT * cosP;
+    jac.aij(1, 3) = cosP;
+    jac.aij(1, 4) = -cosT * sinP;
+    jac.aij(2, 4) = sinT;
+    jac.aij(3, 0) = mpt::negate_if_ltz(1.f / sinT, chg);
+    jac.aij(3, 1) = par(3, 0) * cosT / sinT;
+    jac.aij(4, 2) = 1.f;
+    jac.aij(5, 1) = -1.f;
+  }
+
+  void convertErrCCSToCurv(const MPlexLS& inErr, const MPlexLV& par, const MPlexQI& chg, MPlex5S& outErr) {
+    MPlex56 jac;
+    jacobianCCSToCurv(par, chg, jac);
+    MPlex56 temp;
+#pragma omp simd
+    for (int n = 0; n < NN; ++n) {
+      for (int i = 0; i < 5; ++i) {
+        for (int j = 0; j < 6; ++j) {
+          float sum = 0.f;
+          for (int k = 0; k < 6; ++k)
+            sum += jac.constAt(n, i, k) * inErr.constAt(n, k, j);
+          temp(n, i, j) = sum;
+        }
+      }
+    }
+#pragma omp simd
+    for (int n = 0; n < NN; ++n) {
+      for (int i = 0; i < 5; ++i) {
+        for (int j = 0; j <= i; ++j) {
+          float sum = 0.f;
+          for (int k = 0; k < 6; ++k)
+            sum += temp.constAt(n, i, k) * jac.constAt(n, j, k);
+          outErr(n, i, j) = sum;
+        }
+      }
+    }
+  }
+
+  void convertErrCurvToCCS(const MPlex5S& inErr, const MPlexLV& par, const MPlexQI& chg, MPlexLS& outErr) {
+    MPlex65 jac;
+    jacobianCurvToCCS(par, chg, jac);
+    MPlex65 temp;
+#pragma omp simd
+    for (int n = 0; n < NN; ++n) {
+      for (int i = 0; i < 6; ++i) {
+        for (int j = 0; j < 5; ++j) {
+          float sum = 0.f;
+          for (int k = 0; k < 5; ++k)
+            sum += jac.constAt(n, i, k) * inErr.constAt(n, k, j);
+          temp(n, i, j) = sum;
+        }
+      }
+    }
+#pragma omp simd
+    for (int n = 0; n < NN; ++n) {
+      for (int i = 0; i < 6; ++i) {
+        for (int j = 0; j <= i; ++j) {
+          float sum = 0.f;
+          for (int k = 0; k < 5; ++k)
+            sum += temp.constAt(n, i, k) * jac.constAt(n, j, k);
+          outErr(n, i, j) = sum;
+        }
+      }
+    }
+  }
+
+  // Material effects on a curvilinear error.
+  // The CCS terms of applyMaterialEffects() are projected to curvilinear with the CCS->curvilinear
+  // jacobian at the post-energy-loss state, reproducing what the CCS-error fit gets when the update
+  // converts the propagated CCS error to curvilinear.
+  void applyMaterialEffects(const MPlexQF& hitsRl,
+                            const MPlexQF& hitsXi,
+                            const MPlexQF& propSign,
+                            const MPlexHV& plNrm,
+                            const MPlexQI& inChg,
+                            MPlex5S& outErr,
+                            MPlexLV& outPar,
+                            const int N_proc,
+                            const float* msRefP) {
+    MPlexLS matErr(0.f);
+    MPlexQF iptPre;
+#pragma omp simd
+    for (int n = 0; n < NN; ++n)
+      iptPre(n, 0, 0) = outPar(n, 3, 0);
+
+    applyMaterialEffects(hitsRl, hitsXi, propSign, plNrm, matErr, outPar, N_proc, msRefP);
+
+#pragma omp simd
+    for (int n = 0; n < NN; ++n) {
+      if (n >= N_proc)
+        continue;
+      const float q = inChg(n, 0, 0);
+      const float sT = std::sin(outPar(n, 5, 0));
+      const float cT = std::cos(outPar(n, 5, 0));
+      const float ipt = outPar(n, 3, 0);
+
+      // The CCS-error fit transports with the curvilinear->CCS jacobian at the pre-energy-loss 1/pT
+      // and converts back at the post-energy-loss one: their product is the identity except
+      // d(q/p)/d(lambda) = q*cos(theta)*(ipt_pre - ipt_post).
+      const float e = q * cT * (iptPre(n, 0, 0) - ipt);
+      if (e != 0.f) {
+        const float c01 = outErr(n, 0, 1);
+        const float c11 = outErr(n, 1, 1);
+        outErr(n, 0, 0) += e * (2.f * c01 + e * c11);
+        outErr(n, 0, 1) += e * c11;
+        outErr(n, 0, 2) += e * outErr(n, 1, 2);
+        outErr(n, 0, 3) += e * outErr(n, 1, 3);
+        outErr(n, 0, 4) += e * outErr(n, 1, 4);
+      }
+
+      // CCS -> curvilinear: q/p row (q*sT, q*cT*ipt) on (1/pT, theta), lambda = -theta, phi = phi
+      const float a = q * sT;
+      const float b = q * cT * ipt;
+      const float m33 = matErr(n, 3, 3);
+      const float m35 = matErr(n, 3, 5);
+      const float m44 = matErr(n, 4, 4);
+      const float m55 = matErr(n, 5, 5);
+      outErr(n, 0, 0) += a * a * m33 + 2.f * a * b * m35 + b * b * m55;
+      outErr(n, 0, 1) -= a * m35 + b * m55;
+      outErr(n, 1, 1) += m55;
+      outErr(n, 2, 2) += m44;
+    }
+  }
+
 }  // namespace mkfit

@@ -120,23 +120,25 @@ namespace {
 
   //*****************************************************************************************************
 
-  // Transport Jacobian of a helix step of path length s from inPar to outPar, in the field bFld [T]
-  // (Bz along z, the field the step was taken in).
-  void errPropFromPathL_impl(const MPlexLV& __restrict__ inPar,
-                             const MPlexQI& __restrict__ inChg,
-                             const MPlexQF& __restrict__ sinPin,
-                             const MPlexQF& __restrict__ cosPin,
-                             const MPlexQF& __restrict__ sinT,
-                             const MPlexQF& __restrict__ cosT,
-                             const MPlexLV& __restrict__ outPar,
-                             const MPlexQF& __restrict__ bFld,
-                             const MPlexQF& __restrict__ s,
-                             MPlexLL& __restrict__ errorProp,
-                             const int N_proc) {
+  // Transport Jacobian in curvilinear coordinates (q/p, lambda, phi, x_perp, y_perp) of a helix step of path
+  // length s from inPar to outPar, in the field bFld [T] (Bz along z, the field the step was taken in).
+  // sinPout, cosPout: the end state's phi trigonometry, for the caller's conversion to CCS.
+  void errPropCurvFromPathL_impl(const MPlexLV& __restrict__ inPar,
+                                 const MPlexQI& __restrict__ inChg,
+                                 const MPlexQF& __restrict__ sinPin,
+                                 const MPlexQF& __restrict__ cosPin,
+                                 const MPlexQF& __restrict__ sinT,
+                                 const MPlexQF& __restrict__ cosT,
+                                 const MPlexLV& __restrict__ outPar,
+                                 const MPlexQF& __restrict__ bFld,
+                                 const MPlexQF& __restrict__ s,
+                                 MPlex55& __restrict__ errorPropCurv,
+                                 MPlexQF& __restrict__ sinPout,
+                                 MPlexQF& __restrict__ cosPout,
+                                 const int N_proc) {
     namespace mpt = Matriplex;
     using MPF = MPlexQF;
 
-    MPF sinPout, cosPout;
     mpt::fast_sincos(outPar(4, 0), sinPout, cosPout);
 
     // use code from AnalyticalCurvilinearJacobian::computeFullJacobian for error propagation in curvilinear coordinates, then convert to CCS
@@ -185,7 +187,7 @@ namespace {
     const MPF v23 = sinT;
     // now prepare the transport matrix
 
-    MPlex55 errorPropCurv{0.0f};
+    errorPropCurv.setVal(0.0f);
     //   1/p - doesn't change since |p1| = |p2|
     errorPropCurv.aij(0, 0) = 1.f;
     for (int i = 1; i < 5; ++i)
@@ -259,6 +261,27 @@ namespace {
       }
     }
 #endif
+  }
+
+  // Transport Jacobian of a helix step of path length s from inPar to outPar, in the field bFld [T]
+  // (Bz along z, the field the step was taken in).
+  void errPropFromPathL_impl(const MPlexLV& __restrict__ inPar,
+                             const MPlexQI& __restrict__ inChg,
+                             const MPlexQF& __restrict__ sinPin,
+                             const MPlexQF& __restrict__ cosPin,
+                             const MPlexQF& __restrict__ sinT,
+                             const MPlexQF& __restrict__ cosT,
+                             const MPlexLV& __restrict__ outPar,
+                             const MPlexQF& __restrict__ bFld,
+                             const MPlexQF& __restrict__ s,
+                             MPlexLL& __restrict__ errorProp,
+                             const int N_proc) {
+    namespace mpt = Matriplex;
+
+    MPlex55 errorPropCurv;
+    MPlexQF sinPout, cosPout;
+    errPropCurvFromPathL_impl(
+        inPar, inChg, sinPin, cosPin, sinT, cosT, outPar, bFld, s, errorPropCurv, sinPout, cosPout, N_proc);
 
     //now we need jacobians to convert to/from curvilinear and CCS
     // code from TrackState::jacobianCCSToCurvilinear
@@ -570,6 +593,15 @@ namespace mkfit::plane {
     MultHelixPlanePropTransp(J, temp, outErr);
   }
 
+  void jacobian(
+      const TrackRef& in, const StartTrig& t, const MPlexLV& outPar, const FieldAt& f, const MPlexQF& s, MPlex55& J) {
+    MPlexQF sinPout, cosPout;
+    errPropCurvFromPathL_impl(
+        in.par, in.chg, t.sinP, t.cosP, t.sinT, t.cosT, outPar, f.b, s, J, sinPout, cosPout, in.n_proc);
+  }
+
+  void transport_cov(const MPlex55& J, const MPlex5S& inErr, MPlex5S& outErr) { similarityCurvProp(J, inErr, outErr); }
+
   void material_grid(
       const TrackerInfo& tinfo, const MPlexLV& par, const MPlexQI* noMatEffPtr, const int N_proc, MaterialAt& m) {
 #if !defined(__clang__)
@@ -611,7 +643,18 @@ namespace mkfit::plane {
     applyMaterialEffects(m.radl, m.xi, m.sign, plNrm, err, par, N_proc, ms_ref_p);
   }
 
-  void finish(const TrackRef& in, const MPlexLS& inErr, const MPlexQI& failFlag, MPlexLV& par, MPlexLS& err) {
+  void apply_material(const MaterialAt& m,
+                      const MPlexHV& plNrm,
+                      const MPlexQI& chg,
+                      MPlex5S& err,
+                      MPlexLV& par,
+                      const int N_proc,
+                      const float* ms_ref_p) {
+    applyMaterialEffects(m.radl, m.xi, m.sign, plNrm, chg, err, par, N_proc, ms_ref_p);
+  }
+
+  template <class ErrT>
+  void finish_impl(const TrackRef& in, const ErrT& inErr, const MPlexQI& failFlag, MPlexLV& par, ErrT& err) {
     squashPhiMPlex(par, in.n_proc);  // ensure phi is between |pi|
 
     // PROP-FAIL-ENABLE To keep physics changes minimal, we always restore the
@@ -624,6 +667,14 @@ namespace mkfit::plane {
       }
     }
     // }
+  }
+
+  void finish(const TrackRef& in, const MPlexLS& inErr, const MPlexQI& failFlag, MPlexLV& par, MPlexLS& err) {
+    finish_impl(in, inErr, failFlag, par, err);
+  }
+
+  void finish(const TrackRef& in, const MPlex5S& inErr, const MPlexQI& failFlag, MPlexLV& par, MPlex5S& err) {
+    finish_impl(in, inErr, failFlag, par, err);
   }
 
 }  // namespace mkfit::plane

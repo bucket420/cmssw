@@ -124,6 +124,28 @@ namespace mkfit {
                             // of the running estimate; nullptr = the running estimate
                             const float* msRefP = nullptr);
 
+  // Curvilinear error (q/p, lambda, phi, x_perp, y_perp); parameters stay in CCS.
+
+  // Material effects on a curvilinear error: the CCS terms of applyMaterialEffects() projected to curvilinear.
+  void applyMaterialEffects(const MPlexQF& hitsRl,
+                            const MPlexQF& hitsXi,
+                            const MPlexQF& propSign,
+                            const MPlexHV& plNrm,
+                            const MPlexQI& inChg,
+                            MPlex5S& outErr,
+                            MPlexLV& outPar,
+                            const int N_proc,
+                            const float* msRefP = nullptr);
+
+  // C = A * B * A^T for the transport, curvilinear->local and local->curvilinear jacobians; C may alias B
+  void similarityCurvProp(const MPlex55& A, const MPlex5S& B, MPlex5S& C);
+  void similarityCurv2Loc(const MPlex55& A, const MPlex5S& B, MPlex5S& C);
+  void similarityLoc2Curv(const MPlex55& A, const MPlex5S& B, MPlex5S& C);
+  void jacobianCCSToCurv(const MPlexLV& par, const MPlexQI& chg, MPlex56& jac);
+  void jacobianCurvToCCS(const MPlexLV& par, const MPlexQI& chg, MPlex65& jac);
+  void convertErrCCSToCurv(const MPlexLS& inErr, const MPlexLV& par, const MPlexQI& chg, MPlex5S& outErr);
+  void convertErrCurvToCCS(const MPlex5S& inErr, const MPlexLV& par, const MPlexQI& chg, MPlexLS& outErr);
+
   void MultHelixPropFull(const MPlexLL& A, const MPlexLS& B, MPlexLL& C);
   void MultHelixPropTranspFull(const MPlexLL& A, const MPlexLL& B, MPlexLS& C);
 
