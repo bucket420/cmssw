@@ -1238,6 +1238,10 @@ namespace mkfit {
 
     cloner.begin_eta_bin(&eoccs, &seed_cand_update_idx, &seed_cand_overlap_idx, &extra_cands, start_seed, n_seeds);
 
+    // With prop-to-plane the candidates hold curvilinear errors during the layer loop.
+    if (Config::usePropToPlane)
+      mkfndr->convertCandErrs(eoccs, start_seed, end_seed, true);
+
     // Loop over layers, starting from after the seed.
 
     auto layer_plan_it = st_par.make_iterator(iteration_dir);
@@ -1331,8 +1335,13 @@ namespace mkfit {
 
         // propagate to current layer
         mkfndr->clearFailFlag();
-        (mkfndr->*fnd_foos.m_propagate_foo)(
-            layer_info.propagate_to(), end - itrack, prop_config.finding_inter_layer_pflags);
+        if (Config::usePropToPlane) {
+          // only the position errors are needed (hit selection)
+          mkfndr->propagateTracksToLayerCurv(layer_info, end - itrack, prop_config.finding_inter_layer_pflags);
+        } else {
+          (mkfndr->*fnd_foos.m_propagate_foo)(
+              layer_info.propagate_to(), end - itrack, prop_config.finding_inter_layer_pflags);
+        }
 
         dprint("now get hit range");
 
@@ -1453,6 +1462,9 @@ namespace mkfit {
         eoccs[iseed].addPreBkwSearchHoles();
       eoccs[iseed].mergeCandsAndBestShortOne(m_job->params(), final_scorer, true, true);
     }
+
+    if (Config::usePropToPlane)
+      mkfndr->convertCandErrs(eoccs, start_seed, end_seed, false);
   }
 
   //==============================================================================

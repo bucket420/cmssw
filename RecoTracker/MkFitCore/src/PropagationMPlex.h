@@ -64,6 +64,16 @@ namespace mkfit {
                                 const int N_proc,
                                 const PropagationFlags& pflags);
 
+  // Parameters only, bitwise identical to helixAtRFromIterativeCCS(); pathD = transverse path length.
+  void helixAtRFromIterativeCCSParOnly(const MPlexLV& inPar,
+                                       const MPlexQI& inChg,
+                                       const MPlexQF& msRad,
+                                       MPlexLV& outPar,
+                                       MPlexQF& pathD,
+                                       MPlexQI& outFailFlag,
+                                       const int N_proc,
+                                       const PropagationFlags& pflags);
+
   // Endcap / Z: PropagationMPlexEndcap.cc
 
   void propagateHelixToZMPlex(const MPlexLS& inErr,
@@ -110,6 +120,34 @@ namespace mkfit {
                                   const int N_proc,
                                   const PropagationFlags& pflags,
                                   const MPlexQI* noMatEffPtr = nullptr);
+
+  // The same with the covariance in curvilinear coordinates, transported with the curvilinear Jacobian.
+  void propagateHelixToPlaneMPlex(const MPlex5S& inErr,
+                                  const MPlexLV& inPar,
+                                  const MPlexQI& inChg,
+                                  const MPlexHV& plPnt,
+                                  const MPlexHV& plNrm,
+                                  MPlex5S& outErr,
+                                  MPlexLV& outPar,
+                                  MPlexQI& outFailFlag,
+                                  const int N_proc,
+                                  const PropagationFlags& pflags,
+                                  const MPlexQI* noMatEffPtr = nullptr);
+
+  // Propagation to the layer (R for barrel, Z for endcap) for the hit selection, with curvilinear input errors.
+  // The parameters are exactly those of propagateHelixToRMPlex() / propagateHelixToZMPlex(). Of outErr only the
+  // position block (x, y, z) is filled: the curvilinear error transported along the path, projected on the layer
+  // surface along the track direction (what the CCS propagation to R / Z gives). The rest of outErr is not set.
+  void propagateHelixToLayerPosErrCurv(const MPlex5S& inErr,
+                                       const MPlexLV& inPar,
+                                       const MPlexQI& inChg,
+                                       const MPlexQF& msRZ,
+                                       const bool isBarrel,
+                                       MPlexLS& outErr,
+                                       MPlexLV& outPar,
+                                       MPlexQI& outFailFlag,
+                                       const int N_proc,
+                                       const PropagationFlags& pflags);
 
   // Common functions: PropagationMPlexCommon.cc
 
