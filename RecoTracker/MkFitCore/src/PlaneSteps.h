@@ -155,10 +155,9 @@ namespace mkfit {
                         MPlexLV& par,
                         const int N_proc,
                         const float* ms_ref_p = nullptr);
-    // The same on a curvilinear covariance; chg is the track charge.
+    // The same on a curvilinear covariance, with the terms computed in curvilinear coordinates.
     void apply_material(const MaterialAt& m,
                         const MPlexHV& plNrm,
-                        const MPlexQI& chg,
                         MPlex5S& err,
                         MPlexLV& par,
                         const int N_proc,
