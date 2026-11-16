@@ -1979,44 +1979,12 @@ namespace mkfit {
         m_ErrCurv[iC], m_Par[iC], m_Chg, msRZ, layer_info.is_barrel(), m_Err[iP], m_Par[iP], m_FailFlag, N_proc, pf);
   }
 
-  void MkFinder::convertCandErrs(EventOfCombCandidates &eoccs, int start_seed, int end_seed, bool to_curv) {
-    TrackCand *cands[NN];
-    int n = 0;
-    const auto flush = [&]() {
-      for (int i = 0; i < n; ++i) {
-        m_Par[iC].copyIn(i, cands[i]->parameters().Array());
-        m_Chg(i, 0, 0) = cands[i]->charge();
-        if (to_curv)
-          m_Err[iC].copyIn(i, cands[i]->errors().Array());
-        else
-          m_ErrCurv[iC].copyIn(i, cands[i]->errors().Array());
-      }
-      if (to_curv) {
-        convertErrCCSToCurv(m_Err[iC], m_Par[iC], m_Chg, m_ErrCurv[iC]);
-        for (int i = 0; i < n; ++i) {
-          float *e = cands[i]->errors_nc().Array();
-          m_ErrCurv[iC].copyOut(i, e);
-          std::fill(e + MPlex5S::kSize, e + MPlexLS::kSize, 0.f);
-        }
-      } else {
-        convertErrCurvToCCS(m_ErrCurv[iC], m_Par[iC], m_Chg, m_Err[iC]);
-        for (int i = 0; i < n; ++i)
-          m_Err[iC].copyOut(i, cands[i]->errors_nc().Array());
-      }
-      n = 0;
-    };
-    for (int iseed = start_seed; iseed < end_seed; ++iseed) {
-      CombCandidate &ccand = eoccs[iseed];
-      for (int ic = 0; ic < (int)ccand.size(); ++ic) {
-        cands[n++] = &ccand[ic];
-        if (n == NN)
-          flush();
-      }
-    }
-    if (n > 0)
-      flush();
-    m_cand_err_curv = to_curv;
+  void MkFinder::trackErrsToCCS(int slot) {
+    copyErrCurvFromLS(m_Err[slot], m_ErrCurv[slot]);
+    convertErrCurvToCCS(m_ErrCurv[slot], m_Par[slot], m_Chg, m_Err[slot]);
   }
+
+  void MkFinder::trackErrsFromCCS(int slot) { convertErrCCSToCurv(m_Err[slot], m_Par[slot], m_Chg, m_ErrCurv[slot]); }
 
   //==============================================================================
   // Backward Fit hack
@@ -2108,11 +2076,18 @@ namespace mkfit {
 
     const int iO = outputProp ? iP : iC;
 
+    // m_Err[iO] is CCS (see trackErrsToCCS())
+    if (Config::useCurvTrackErrors)
+      trackErrsFromCCS(iO);
+
     int itrack = 0;
     for (int i = beg; i < end; ++i, ++itrack) {
       TrackCand &trk = eocss[i][0];
 
-      m_Err[iO].copyOut(itrack, trk.errors_nc().Array());
+      if (Config::useCurvTrackErrors)
+        copyOutErrCurv(m_ErrCurv[iO], itrack, trk.errors_nc().Array());
+      else
+        m_Err[iO].copyOut(itrack, trk.errors_nc().Array());
       m_Par[iO].copyOut(itrack, trk.parameters_nc().Array());
       trk.setCharge(m_Chg.At(itrack, 0, 0));
 
@@ -2535,8 +2510,12 @@ namespace mkfit {
     print_par_err(iC, DSLOT);
 #endif
 
-    // The fit runs with the error in curvilinear coordinates; the candidates keep CCS errors.
-    convertErrCCSToCurv(m_Err[iC], m_Par[iC], m_Chg, m_ErrCurv[iC]);
+    // The fit runs with the error in curvilinear coordinates, which the candidates hold with
+    // Config::useCurvTrackErrors (else CCS errors).
+    if (Config::useCurvTrackErrors)
+      copyErrCurvFromLS(m_Err[iC], m_ErrCurv[iC]);
+    else
+      convertErrCCSToCurv(m_Err[iC], m_Par[iC], m_Chg, m_ErrCurv[iC]);
 
     int done_count = 0;
     while (done_count != N_proc) {
@@ -2562,13 +2541,16 @@ namespace mkfit {
           done_flag[i] = 1;
           ++done_count;
 
-          if (!err_ccs_current) {
-            convertErrCurvToCCS(m_ErrCurv[iC], m_Par[iC], m_Chg, m_Err[iC]);
-            err_ccs_current = true;
-          }
-
           TrackCand &trk = *m_TrkCand[i];
-          m_Err[iC].copyOut(i, trk.errors_nc().Array());
+          if (Config::useCurvTrackErrors) {
+            copyOutErrCurv(m_ErrCurv[iC], i, trk.errors_nc().Array());
+          } else {
+            if (!err_ccs_current) {
+              convertErrCurvToCCS(m_ErrCurv[iC], m_Par[iC], m_Chg, m_Err[iC]);
+              err_ccs_current = true;
+            }
+            m_Err[iC].copyOut(i, trk.errors_nc().Array());
+          }
           m_Par[iC].copyOut(i, trk.parameters_nc().Array());
           trk.setCharge(m_Chg[i]);
           trk.setChi2(m_Chi2[i]);

@@ -152,9 +152,10 @@ namespace mkfit {
 
     void copyOutParErr(std::vector<CombCandidate> &seed_cand_vec, int N_proc, bool outputProp) const;
 
-    // Convert the errors of all candidates of seeds [start_seed, end_seed) between CCS (6x6) and
-    // curvilinear (5x5, stored in the first 15 elements of the 6x6 storage); sets m_cand_err_curv.
-    void convertCandErrs(EventOfCombCandidates &eoccs, int start_seed, int end_seed, bool to_curv);
+    // With Config::useCurvTrackErrors the backward-fit input (m_Err[slot] from bkFitInputTracks()) holds curvilinear
+    // errors: to CCS for the CCS-only steps; and back, m_Err[slot] (CCS) to m_ErrCurv[slot] for the copy-out.
+    void trackErrsToCCS(int slot);
+    void trackErrsFromCCS(int slot);
 
     // Propagation of the iC state to the layer for the hit selection, from the curvilinear errors: parameters as
     // with the CCS propagation to R / Z; of m_Err[iP] only the position block is set.
@@ -229,7 +230,7 @@ namespace mkfit {
     }
 
     // With m_cand_err_curv the candidates hold curvilinear errors in the first 15 elements of their 6x6 error
-    // storage (see convertCandErrs()).
+    // storage (see MkBuilder::find_tracks_in_layers()).
     void copy_in(const TrackCand &trk, const int mslot, const int tslot) {
       if (m_cand_err_curv)
         m_ErrCurv[tslot].copyIn(mslot, trk.errors().Array());
