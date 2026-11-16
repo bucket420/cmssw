@@ -1674,6 +1674,8 @@ namespace mkfit {
     int nHitsAdded[NN]{};
     bool isTooLargeCluster[NN]{false};
 
+    // The candidates' state at their last hit (iC); the error is already curvilinear (m_ErrCurv[iC]).
+
     for (int hit_cnt = 0; hit_cnt < maxSize; ++hit_cnt) {
       mhp.reset();
 
@@ -1699,7 +1701,7 @@ namespace mkfit {
         // Maybe could use 2 matriplex packers ... ModuleInfo has 3 * SVector3 and uint
         MPlexHV norm{0.0f}, dir{0.0f}, pnt{0.0f};
         packModuleNormDirPnt(layer_of_hits, hit_cnt, norm, dir, pnt, N_proc);
-        kalmanPropagateAndComputeChi2Plane(m_Err[iC],
+        kalmanPropagateAndComputeChi2Plane(m_ErrCurv[iC],
                                            m_Par[iC],
                                            m_Chg,
                                            m_msErr,
@@ -1882,7 +1884,7 @@ namespace mkfit {
     if /*constexpr*/ (Config::usePropToPlane) {
       MPlexHV norm, dir, pnt;
       packModuleNormDirPnt(layer_of_hits, 0, norm, dir, pnt, N_proc);
-      kalmanPropagateAndUpdatePlane(m_Err[iP],
+      kalmanPropagateAndUpdatePlane(m_ErrCurv[iP],
                                     m_Par[iP],
                                     m_Chg,
                                     m_msErr,
@@ -1890,7 +1892,7 @@ namespace mkfit {
                                     norm,
                                     dir,
                                     pnt,
-                                    m_Err[iC],
+                                    m_ErrCurv[iC],
                                     m_Par[iC],
                                     m_FailFlag,
                                     N_proc,
@@ -1926,6 +1928,9 @@ namespace mkfit {
     // See comment in MkBuilder::find_tracks_in_layer() about intra / inter flags used here
     // for propagation to the hit.
     clearFailFlag();
+    // The R/Z chi2 needs CCS errors.
+    if (m_cand_err_curv)
+      convertErrCurvToCCS(m_ErrCurv[iC], m_Par[iC], m_Chg, m_Err[iC]);
     (*fnd_foos.m_compute_chi2_foo)(m_Err[iC],
                                    m_Par[iC],
                                    m_Chg,
@@ -1953,7 +1958,10 @@ namespace mkfit {
         TrackCand &cand = seed_cand_vec[m_SeedIdx(i, 0, 0)][m_CandIdx(i, 0, 0)];
 
         // Set the track state to the updated parameters
-        m_Err[iO].copyOut(i, cand.errors_nc().Array());
+        if (m_cand_err_curv)
+          m_ErrCurv[iO].copyOut(i, cand.errors_nc().Array());
+        else
+          m_Err[iO].copyOut(i, cand.errors_nc().Array());
         m_Par[iO].copyOut(i, cand.parameters_nc().Array());
         cand.setCharge(m_Chg(i, 0, 0));
 
@@ -1962,6 +1970,52 @@ namespace mkfit {
                << " z=" << cand.parameters()[2] << " pt=" << 1. / cand.parameters()[3] << " posEta=" << cand.posEta());
       }
     }
+  }
+
+  void MkFinder::propagateTracksToLayerCurv(const LayerInfo &layer_info, int N_proc, const PropagationFlags &pf) {
+    MPlexQF msRZ;
+    msRZ.setVal(layer_info.propagate_to());
+    propagateHelixToLayerPosErrCurv(
+        m_ErrCurv[iC], m_Par[iC], m_Chg, msRZ, layer_info.is_barrel(), m_Err[iP], m_Par[iP], m_FailFlag, N_proc, pf);
+  }
+
+  void MkFinder::convertCandErrs(EventOfCombCandidates &eoccs, int start_seed, int end_seed, bool to_curv) {
+    TrackCand *cands[NN];
+    int n = 0;
+    const auto flush = [&]() {
+      for (int i = 0; i < n; ++i) {
+        m_Par[iC].copyIn(i, cands[i]->parameters().Array());
+        m_Chg(i, 0, 0) = cands[i]->charge();
+        if (to_curv)
+          m_Err[iC].copyIn(i, cands[i]->errors().Array());
+        else
+          m_ErrCurv[iC].copyIn(i, cands[i]->errors().Array());
+      }
+      if (to_curv) {
+        convertErrCCSToCurv(m_Err[iC], m_Par[iC], m_Chg, m_ErrCurv[iC]);
+        for (int i = 0; i < n; ++i) {
+          float *e = cands[i]->errors_nc().Array();
+          m_ErrCurv[iC].copyOut(i, e);
+          std::fill(e + MPlex5S::kSize, e + MPlexLS::kSize, 0.f);
+        }
+      } else {
+        convertErrCurvToCCS(m_ErrCurv[iC], m_Par[iC], m_Chg, m_Err[iC]);
+        for (int i = 0; i < n; ++i)
+          m_Err[iC].copyOut(i, cands[i]->errors_nc().Array());
+      }
+      n = 0;
+    };
+    for (int iseed = start_seed; iseed < end_seed; ++iseed) {
+      CombCandidate &ccand = eoccs[iseed];
+      for (int ic = 0; ic < (int)ccand.size(); ++ic) {
+        cands[n++] = &ccand[ic];
+        if (n == NN)
+          flush();
+      }
+    }
+    if (n > 0)
+      flush();
+    m_cand_err_curv = to_curv;
   }
 
   //==============================================================================
@@ -2481,6 +2535,9 @@ namespace mkfit {
     print_par_err(iC, DSLOT);
 #endif
 
+    // The fit runs with the error in curvilinear coordinates; the candidates keep CCS errors.
+    convertErrCCSToCurv(m_Err[iC], m_Par[iC], m_Chg, m_ErrCurv[iC]);
+
     int done_count = 0;
     while (done_count != N_proc) {
 #if defined(DEBUG_BACKWARD_FIT)
@@ -2489,6 +2546,7 @@ namespace mkfit {
 
       int fitNode[NN];  // HoT node fitted in this step, -1 if none
       std::fill_n(fitNode, NN, -1);
+      bool err_ccs_current = false;
       int here_count = 0;
       for (int i = 0; i < N_proc; ++i) {
         if (done_flag[i])
@@ -2503,6 +2561,11 @@ namespace mkfit {
           // Mark as done and copy out.
           done_flag[i] = 1;
           ++done_count;
+
+          if (!err_ccs_current) {
+            convertErrCurvToCCS(m_ErrCurv[iC], m_Par[iC], m_Chg, m_Err[iC]);
+            err_ccs_current = true;
+          }
 
           TrackCand &trk = *m_TrkCand[i];
           m_Err[iC].copyOut(i, trk.errors_nc().Array());
@@ -2567,12 +2630,13 @@ namespace mkfit {
 
       m_FailFlag.setVal(0);
       const MPlexQI chgPrev = m_Chg;
-      propagateHelixToPlaneMPlex(m_Err[iC], m_Par[iC], m_Chg, plPnt, plNrm,
-                                 m_Err[iP], m_Par[iP], m_FailFlag,
+      propagateHelixToPlaneMPlex(m_ErrCurv[iC], m_Par[iC], m_Chg, plPnt, plNrm,
+                                 m_ErrCurv[iP], m_Par[iP], m_FailFlag,
                                  N_proc, m_prop_config->backward_fit_pflags, nullptr);
       kalmanOperationPlaneLocal(KFO_Calculate_Chi2 | KFO_Update_Params | KFO_Local_Cov,
-                                m_Err[iP], m_Par[iP], m_Chg, m_msErr, m_msPar, plNrm, plDir, plPnt,
-                                m_Err[iC], m_Par[iC], tmp_chi2, N_proc);
+                                m_ErrCurv[iP], m_Par[iP], m_Chg, m_msErr, m_msPar, plNrm, plDir, plPnt,
+                                m_ErrCurv[iC], m_Par[iC], tmp_chi2, N_proc);
+      // q/p changed sign in the update: the curvilinear error already refers to the new sign
       kalmanCheckChargeFlip(m_Par[iC], m_Chg, N_proc);
 
 #if defined(DEBUG_PROP_UPDATE)
@@ -2682,7 +2746,7 @@ namespace mkfit {
           if (fitNode[i] < 0 || !(tmp_chi2[i] > outlierChi2) || nOutliers[i] >= maxOutliers ||
               m_TrkCand[i]->pT() < minPt)
             continue;
-          m_Err[iC].copySlot(i, m_Err[iP]);
+          m_ErrCurv[iC].copySlot(i, m_ErrCurv[iP]);
           m_Par[iC].copySlot(i, m_Par[iP]);
           m_Chg[i] = chgPrev[i];
           tmp_chi2[i] = 0.f;

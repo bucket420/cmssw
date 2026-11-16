@@ -152,6 +152,14 @@ namespace mkfit {
 
     void copyOutParErr(std::vector<CombCandidate> &seed_cand_vec, int N_proc, bool outputProp) const;
 
+    // Convert the errors of all candidates of seeds [start_seed, end_seed) between CCS (6x6) and
+    // curvilinear (5x5, stored in the first 15 elements of the 6x6 storage); sets m_cand_err_curv.
+    void convertCandErrs(EventOfCombCandidates &eoccs, int start_seed, int end_seed, bool to_curv);
+
+    // Propagation of the iC state to the layer for the hit selection, from the curvilinear errors: parameters as
+    // with the CCS propagation to R / Z; of m_Err[iP] only the position block is set.
+    void propagateTracksToLayerCurv(const LayerInfo &layer_info, int N_proc, const PropagationFlags &pf);
+
     //----------------------------------------------------------------------------
     // Backward fit
 
@@ -220,8 +228,13 @@ namespace mkfit {
       std::copy(m_HoTArrs[mslot], &m_HoTArrs[mslot][m_NHits(mslot, 0, 0)], trk.beginHitsOnTrack_nc());
     }
 
+    // With m_cand_err_curv the candidates hold curvilinear errors in the first 15 elements of their 6x6 error
+    // storage (see convertCandErrs()).
     void copy_in(const TrackCand &trk, const int mslot, const int tslot) {
-      m_Err[tslot].copyIn(mslot, trk.errors().Array());
+      if (m_cand_err_curv)
+        m_ErrCurv[tslot].copyIn(mslot, trk.errors().Array());
+      else
+        m_Err[tslot].copyIn(mslot, trk.errors().Array());
       m_Par[tslot].copyIn(mslot, trk.parameters().Array());
 
       m_Chg(mslot, 0, 0) = trk.charge();
@@ -241,7 +254,10 @@ namespace mkfit {
     }
 
     void copy_out(TrackCand &trk, const int mslot, const int tslot) const {
-      m_Err[tslot].copyOut(mslot, trk.errors_nc().Array());
+      if (m_cand_err_curv)
+        m_ErrCurv[tslot].copyOut(mslot, trk.errors_nc().Array());
+      else
+        m_Err[tslot].copyOut(mslot, trk.errors_nc().Array());
       m_Par[tslot].copyOut(mslot, trk.parameters_nc().Array());
 
       trk.setCharge(m_Chg(mslot, 0, 0));
@@ -341,6 +357,13 @@ namespace mkfit {
     // Hit errors / parameters for hit matching, update.
     MPlexHS m_msErr{0.0f};
     MPlexHV m_msPar{0.0f};
+
+    // Track errors in curvilinear coordinates (q/p, lambda, phi, x_perp, y_perp) for the prop-to-plane
+    // chi2, update and backward fit. With prop-to-plane the candidates hold them during the layer loop of the
+    // clone engine (m_cand_err_curv; copy_in / copy_out of TrackCand); m_Err[iC] is filled from them only where
+    // CCS is needed (overlap chi2).
+    MPlex5S m_ErrCurv[2];
+    bool m_cand_err_curv = false;
 
     // An idea: Do propagation to hit in FindTracksXYZZ functions.
     // Have some state / functions here that make this short to write.

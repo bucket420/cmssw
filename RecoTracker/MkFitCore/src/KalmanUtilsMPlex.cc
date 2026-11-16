@@ -902,8 +902,17 @@ namespace {
   // those will never get accessed in the code (read from or written into).
 
   CMS_SA_ALLOW mkfit::MPlexLS dummy_err;
+  CMS_SA_ALLOW mkfit::MPlex5S dummy_err_curv;
   CMS_SA_ALLOW mkfit::MPlexLV dummy_par;
   CMS_SA_ALLOW mkfit::MPlexQF dummy_chi2;
+
+  template <class ErrT>
+  ErrT& dummy_err_for() {
+    if constexpr (std::is_same_v<ErrT, mkfit::MPlex5S>)
+      return dummy_err_curv;
+    else
+      return dummy_err;
+  }
 }  // namespace
 
 namespace mkfit {
@@ -1144,6 +1153,60 @@ namespace mkfit {
                               N_proc);
   }
 
+  namespace {
+    template <class ErrT>
+    void kalmanPropagateAndUpdatePlane_impl(const ErrT& psErr,
+                                            const MPlexLV& psPar,
+                                            MPlexQI& Chg,
+                                            const MPlexHS& msErr,
+                                            const MPlexHV& msPar,
+                                            const MPlexHV& plNrm,
+                                            const MPlexHV& plDir,
+                                            const MPlexHV& plPnt,
+                                            ErrT& outErr,
+                                            MPlexLV& outPar,
+                                            MPlexQI& outFailFlag,
+                                            const int N_proc,
+                                            const PropagationFlags& propFlags,
+                                            const bool propToHit) {
+      if (propToHit) {
+        ErrT propErr;
+        MPlexLV propPar;
+        propagateHelixToPlaneMPlex(psErr, psPar, Chg, plPnt, plNrm, propErr, propPar, outFailFlag, N_proc, propFlags);
+
+        kalmanOperationPlaneLocal(KFO_Update_Params | KFO_Local_Cov,
+                                  propErr,
+                                  propPar,
+                                  Chg,
+                                  msErr,
+                                  msPar,
+                                  plNrm,
+                                  plDir,
+                                  plPnt,
+                                  outErr,
+                                  outPar,
+                                  dummy_chi2,
+                                  N_proc);
+      } else {
+        kalmanOperationPlaneLocal(KFO_Update_Params | KFO_Local_Cov,
+                                  psErr,
+                                  psPar,
+                                  Chg,
+                                  msErr,
+                                  msPar,
+                                  plNrm,
+                                  plDir,
+                                  plPnt,
+                                  outErr,
+                                  outPar,
+                                  dummy_chi2,
+                                  N_proc);
+      }
+
+      kalmanCheckChargeFlip(outPar, Chg, N_proc);
+    }
+  }  // namespace
+
   void kalmanPropagateAndUpdatePlane(const MPlexLS& psErr,
                                      const MPlexLV& psPar,
                                      MPlexQI& Chg,
@@ -1158,41 +1221,26 @@ namespace mkfit {
                                      const int N_proc,
                                      const PropagationFlags& propFlags,
                                      const bool propToHit) {
-    if (propToHit) {
-      MPlexLS propErr;
-      MPlexLV propPar;
-      propagateHelixToPlaneMPlex(psErr, psPar, Chg, plPnt, plNrm, propErr, propPar, outFailFlag, N_proc, propFlags);
+    kalmanPropagateAndUpdatePlane_impl(
+        psErr, psPar, Chg, msErr, msPar, plNrm, plDir, plPnt, outErr, outPar, outFailFlag, N_proc, propFlags, propToHit);
+  }
 
-      kalmanOperationPlaneLocal(KFO_Update_Params | KFO_Local_Cov,
-                                propErr,
-                                propPar,
-                                Chg,
-                                msErr,
-                                msPar,
-                                plNrm,
-                                plDir,
-                                plPnt,
-                                outErr,
-                                outPar,
-                                dummy_chi2,
-                                N_proc);
-    } else {
-      kalmanOperationPlaneLocal(KFO_Update_Params | KFO_Local_Cov,
-                                psErr,
-                                psPar,
-                                Chg,
-                                msErr,
-                                msPar,
-                                plNrm,
-                                plDir,
-                                plPnt,
-                                outErr,
-                                outPar,
-                                dummy_chi2,
-                                N_proc);
-    }
-
-    kalmanCheckChargeFlip(outPar, Chg, N_proc);
+  void kalmanPropagateAndUpdatePlane(const MPlex5S& psErr,
+                                     const MPlexLV& psPar,
+                                     MPlexQI& Chg,
+                                     const MPlexHS& msErr,
+                                     const MPlexHV& msPar,
+                                     const MPlexHV& plNrm,
+                                     const MPlexHV& plDir,
+                                     const MPlexHV& plPnt,
+                                     MPlex5S& outErr,
+                                     MPlexLV& outPar,
+                                     MPlexQI& outFailFlag,
+                                     const int N_proc,
+                                     const PropagationFlags& propFlags,
+                                     const bool propToHit) {
+    kalmanPropagateAndUpdatePlane_impl(
+        psErr, psPar, Chg, msErr, msPar, plNrm, plDir, plPnt, outErr, outPar, outFailFlag, N_proc, propFlags, propToHit);
   }
 
   //------------------------------------------------------------------------------
@@ -1222,6 +1270,58 @@ namespace mkfit {
                               N_proc);
   }
 
+  namespace {
+    template <class ErrT>
+    void kalmanPropagateAndComputeChi2Plane_impl(const ErrT& psErr,
+                                                 const MPlexLV& psPar,
+                                                 const MPlexQI& inChg,
+                                                 const MPlexHS& msErr,
+                                                 const MPlexHV& msPar,
+                                                 const MPlexHV& plNrm,
+                                                 const MPlexHV& plDir,
+                                                 const MPlexHV& plPnt,
+                                                 MPlexQF& outChi2,
+                                                 MPlexLV& propPar,
+                                                 MPlexQI& outFailFlag,
+                                                 const int N_proc,
+                                                 const PropagationFlags& propFlags,
+                                                 const bool propToHit) {
+      propPar = psPar;
+      if (propToHit) {
+        ErrT propErr;
+        propagateHelixToPlaneMPlex(psErr, psPar, inChg, plPnt, plNrm, propErr, propPar, outFailFlag, N_proc, propFlags);
+
+        kalmanOperationPlaneLocal(KFO_Calculate_Chi2,
+                                  propErr,
+                                  propPar,
+                                  inChg,
+                                  msErr,
+                                  msPar,
+                                  plNrm,
+                                  plDir,
+                                  plPnt,
+                                  dummy_err_for<ErrT>(),
+                                  dummy_par,
+                                  outChi2,
+                                  N_proc);
+      } else {
+        kalmanOperationPlaneLocal(KFO_Calculate_Chi2,
+                                  psErr,
+                                  psPar,
+                                  inChg,
+                                  msErr,
+                                  msPar,
+                                  plNrm,
+                                  plDir,
+                                  plPnt,
+                                  dummy_err_for<ErrT>(),
+                                  dummy_par,
+                                  outChi2,
+                                  N_proc);
+      }
+    }
+  }  // namespace
+
   void kalmanPropagateAndComputeChi2Plane(const MPlexLS& psErr,
                                           const MPlexLV& psPar,
                                           const MPlexQI& inChg,
@@ -1236,39 +1336,50 @@ namespace mkfit {
                                           const int N_proc,
                                           const PropagationFlags& propFlags,
                                           const bool propToHit) {
-    propPar = psPar;
-    if (propToHit) {
-      MPlexLS propErr;
-      propagateHelixToPlaneMPlex(psErr, psPar, inChg, plPnt, plNrm, propErr, propPar, outFailFlag, N_proc, propFlags);
+    kalmanPropagateAndComputeChi2Plane_impl(psErr,
+                                            psPar,
+                                            inChg,
+                                            msErr,
+                                            msPar,
+                                            plNrm,
+                                            plDir,
+                                            plPnt,
+                                            outChi2,
+                                            propPar,
+                                            outFailFlag,
+                                            N_proc,
+                                            propFlags,
+                                            propToHit);
+  }
 
-      kalmanOperationPlaneLocal(KFO_Calculate_Chi2,
-                                propErr,
-                                propPar,
-                                inChg,
-                                msErr,
-                                msPar,
-                                plNrm,
-                                plDir,
-                                plPnt,
-                                dummy_err,
-                                dummy_par,
-                                outChi2,
-                                N_proc);
-    } else {
-      kalmanOperationPlaneLocal(KFO_Calculate_Chi2,
-                                psErr,
-                                psPar,
-                                inChg,
-                                msErr,
-                                msPar,
-                                plNrm,
-                                plDir,
-                                plPnt,
-                                dummy_err,
-                                dummy_par,
-                                outChi2,
-                                N_proc);
-    }
+  void kalmanPropagateAndComputeChi2Plane(const MPlex5S& psErr,
+                                          const MPlexLV& psPar,
+                                          const MPlexQI& inChg,
+                                          const MPlexHS& msErr,
+                                          const MPlexHV& msPar,
+                                          const MPlexHV& plNrm,
+                                          const MPlexHV& plDir,
+                                          const MPlexHV& plPnt,
+                                          MPlexQF& outChi2,
+                                          MPlexLV& propPar,
+                                          MPlexQI& outFailFlag,
+                                          const int N_proc,
+                                          const PropagationFlags& propFlags,
+                                          const bool propToHit) {
+    kalmanPropagateAndComputeChi2Plane_impl(psErr,
+                                            psPar,
+                                            inChg,
+                                            msErr,
+                                            msPar,
+                                            plNrm,
+                                            plDir,
+                                            plPnt,
+                                            outChi2,
+                                            propPar,
+                                            outFailFlag,
+                                            N_proc,
+                                            propFlags,
+                                            propToHit);
   }
 
   //------------------------------------------------------------------------------
@@ -1781,6 +1892,65 @@ namespace mkfit {
 
   //------------------------------------------------------------------------------
 
+  namespace {
+    // ErrT is MPlexLS (CCS error) or MPlex5S (curvilinear error)
+    template <class ErrT>
+    void kalmanOperationPlaneLocal_impl(const int kfOp,
+                                        const ErrT& psErr,
+                                        const MPlexLV& psPar,
+                                        const MPlexQI& inChg,
+                                        const MPlexHS& msErr,
+                                        const MPlexHV& msPar,
+                                        const MPlexHV& plNrm,
+                                        const MPlexHV& plDir,
+                                        const MPlexHV& plPnt,
+                                        ErrT& outErr,
+                                        MPlexLV& outPar,
+                                        MPlexQF& outChi2,
+                                        const int N_proc,
+                                        const MPlexQI* doCPE,
+                                        cpe_func cpe_corr_func,
+                                        bool use_param_b_field) {
+#ifdef DEBUG
+      {
+        dmutex_guard;
+        matriplex_print_0(psPar, "psPar:");
+        matriplex_print_0(psErr, "psErr:");
+        matriplex_print_0(msPar, "msPar:");
+        matriplex_print_0(msErr, "msErr:");
+      }
+#endif
+
+      using namespace plane;
+
+      const TrackRef pred{psPar, inChg, N_proc};
+      const PlaneRef pl{plPnt, plNrm};
+
+      MPlexQF bFld;
+      local_field(pred, use_param_b_field, bFld);
+
+      LocalPred L;
+      to_local(pred, psErr, pl, plDir, bFld, L);
+
+      LocalMeas M;
+      measurement(L, msPar, msErr, plPnt, M);
+      if (doCPE && cpe_corr_func)
+        measurement_cpe(*doCPE, cpe_corr_func, L, M);
+
+      Residual R;
+      residual(L, M, R);
+
+      if (kfOp & KFO_Calculate_Chi2)
+        chi2(R, outChi2);
+
+      if (kfOp & KFO_Update_Params) {
+        LocalUpd U;
+        update(L, R, U);
+        to_global(U, L, pl, inChg, bFld, outPar, outErr);
+      }
+    }
+  }  // namespace
+
   void kalmanOperationPlaneLocal(const int kfOp,
                                  const MPlexLS& psErr,
                                  const MPlexLV& psPar,
@@ -1797,43 +1967,56 @@ namespace mkfit {
                                  const MPlexQI* doCPE,
                                  cpe_func cpe_corr_func,
                                  bool use_param_b_field) {
-#ifdef DEBUG
-    {
-      dmutex_guard;
-      matriplex_print_0(psPar, "psPar:");
-      matriplex_print_0(psErr, "psErr:");
-      matriplex_print_0(msPar, "msPar:");
-      matriplex_print_0(msErr, "msErr:");
-    }
-#endif
+    kalmanOperationPlaneLocal_impl(kfOp,
+                                   psErr,
+                                   psPar,
+                                   inChg,
+                                   msErr,
+                                   msPar,
+                                   plNrm,
+                                   plDir,
+                                   plPnt,
+                                   outErr,
+                                   outPar,
+                                   outChi2,
+                                   N_proc,
+                                   doCPE,
+                                   cpe_corr_func,
+                                   use_param_b_field);
+  }
 
-    using namespace plane;
-
-    const TrackRef pred{psPar, inChg, N_proc};
-    const PlaneRef pl{plPnt, plNrm};
-
-    MPlexQF bFld;
-    local_field(pred, use_param_b_field, bFld);
-
-    LocalPred L;
-    to_local(pred, psErr, pl, plDir, bFld, L);
-
-    LocalMeas M;
-    measurement(L, msPar, msErr, plPnt, M);
-    if (doCPE && cpe_corr_func)
-      measurement_cpe(*doCPE, cpe_corr_func, L, M);
-
-    Residual R;
-    residual(L, M, R);
-
-    if (kfOp & KFO_Calculate_Chi2)
-      chi2(R, outChi2);
-
-    if (kfOp & KFO_Update_Params) {
-      LocalUpd U;
-      update(L, R, U);
-      to_global(U, L, pl, inChg, bFld, outPar, outErr);
-    }
+  void kalmanOperationPlaneLocal(const int kfOp,
+                                 const MPlex5S& psErr,
+                                 const MPlexLV& psPar,
+                                 const MPlexQI& inChg,
+                                 const MPlexHS& msErr,
+                                 const MPlexHV& msPar,
+                                 const MPlexHV& plNrm,
+                                 const MPlexHV& plDir,
+                                 const MPlexHV& plPnt,
+                                 MPlex5S& outErr,
+                                 MPlexLV& outPar,
+                                 MPlexQF& outChi2,
+                                 const int N_proc,
+                                 const MPlexQI* doCPE,
+                                 cpe_func cpe_corr_func,
+                                 bool use_param_b_field) {
+    kalmanOperationPlaneLocal_impl(kfOp,
+                                   psErr,
+                                   psPar,
+                                   inChg,
+                                   msErr,
+                                   msPar,
+                                   plNrm,
+                                   plDir,
+                                   plPnt,
+                                   outErr,
+                                   outPar,
+                                   outChi2,
+                                   N_proc,
+                                   doCPE,
+                                   cpe_corr_func,
+                                   use_param_b_field);
   }
 
   //------------------------------------------------------------------------------
