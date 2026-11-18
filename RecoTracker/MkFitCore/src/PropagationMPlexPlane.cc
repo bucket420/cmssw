@@ -123,19 +123,21 @@ namespace {
   // Transport Jacobian in curvilinear coordinates (q/p, lambda, phi, x_perp, y_perp) of a helix step of path
   // length s from inPar to outPar, in the field bFld [T] (Bz along z, the field the step was taken in).
   // sinPout, cosPout: the end state's phi trigonometry, for the caller's conversion to CCS.
-  void errPropCurvFromPathL_impl(const MPlexLV& __restrict__ inPar,
-                                 const MPlexQI& __restrict__ inChg,
-                                 const MPlexQF& __restrict__ sinPin,
-                                 const MPlexQF& __restrict__ cosPin,
-                                 const MPlexQF& __restrict__ sinT,
-                                 const MPlexQF& __restrict__ cosT,
-                                 const MPlexLV& __restrict__ outPar,
-                                 const MPlexQF& __restrict__ bFld,
-                                 const MPlexQF& __restrict__ s,
-                                 MPlex55& __restrict__ errorPropCurv,
-                                 MPlexQF& __restrict__ sinPout,
-                                 MPlexQF& __restrict__ cosPout,
-                                 const int N_proc) {
+  // flatten: GCC otherwise calls vdt::fast_sincosf out of line once per lane inside the fast_sincos lane loops, which
+  // keeps them scalar; inlined, they vectorize.
+  __attribute__((flatten)) void errPropCurvFromPathL_impl(const MPlexLV& __restrict__ inPar,
+                                                          const MPlexQI& __restrict__ inChg,
+                                                          const MPlexQF& __restrict__ sinPin,
+                                                          const MPlexQF& __restrict__ cosPin,
+                                                          const MPlexQF& __restrict__ sinT,
+                                                          const MPlexQF& __restrict__ cosT,
+                                                          const MPlexLV& __restrict__ outPar,
+                                                          const MPlexQF& __restrict__ bFld,
+                                                          const MPlexQF& __restrict__ s,
+                                                          MPlex55& __restrict__ errorPropCurv,
+                                                          MPlexQF& __restrict__ sinPout,
+                                                          MPlexQF& __restrict__ cosPout,
+                                                          const int N_proc) {
     namespace mpt = Matriplex;
     using MPF = MPlexQF;
 
