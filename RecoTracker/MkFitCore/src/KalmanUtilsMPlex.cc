@@ -1285,11 +1285,14 @@ namespace mkfit {
                                                  MPlexQI& outFailFlag,
                                                  const int N_proc,
                                                  const PropagationFlags& propFlags,
-                                                 const bool propToHit) {
+                                                 const bool propToHit,
+                                                 ErrT* outPropErr = nullptr) {
       propPar = psPar;
       if (propToHit) {
         ErrT propErr;
         propagateHelixToPlaneMPlex(psErr, psPar, inChg, plPnt, plNrm, propErr, propPar, outFailFlag, N_proc, propFlags);
+        if (outPropErr)
+          *outPropErr = propErr;
 
         kalmanOperationPlaneLocal(KFO_Calculate_Chi2,
                                   propErr,
@@ -1305,6 +1308,8 @@ namespace mkfit {
                                   outChi2,
                                   N_proc);
       } else {
+        if (outPropErr)
+          *outPropErr = psErr;
         kalmanOperationPlaneLocal(KFO_Calculate_Chi2,
                                   psErr,
                                   psPar,
@@ -1365,7 +1370,8 @@ namespace mkfit {
                                           MPlexQI& outFailFlag,
                                           const int N_proc,
                                           const PropagationFlags& propFlags,
-                                          const bool propToHit) {
+                                          const bool propToHit,
+                                          MPlex5S* propErr) {
     kalmanPropagateAndComputeChi2Plane_impl(psErr,
                                             psPar,
                                             inChg,
@@ -1379,7 +1385,8 @@ namespace mkfit {
                                             outFailFlag,
                                             N_proc,
                                             propFlags,
-                                            propToHit);
+                                            propToHit,
+                                            propErr);
   }
 
   //------------------------------------------------------------------------------

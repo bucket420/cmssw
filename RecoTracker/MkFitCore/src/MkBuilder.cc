@@ -1356,6 +1356,7 @@ namespace mkfit {
         continue;
 
       cloner.begin_layer(curr_layer);
+      mkfndr->m_prop_states.clear();
 
       //vectorized loop
       for (int itrack = 0; itrack < theEndCand; itrack += NN) {

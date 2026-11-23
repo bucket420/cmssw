@@ -195,6 +195,7 @@ namespace mkfit {
                                           const bool propToHit);
 
   // The same with the covariance in curvilinear coordinates (q/p, lambda, phi, x_perp, y_perp), the parameters in CCS.
+  // If propErr is given, the propagated error is also returned (with propPar, the state on the plane).
   void kalmanPropagateAndComputeChi2Plane(const MPlex5S& psErr,
                                           const MPlexLV& psPar,
                                           const MPlexQI& inChg,
@@ -208,7 +209,8 @@ namespace mkfit {
                                           MPlexQI& outFailFlag,
                                           const int N_proc,
                                           const PropagationFlags& propFlags,
-                                          const bool propToHit);
+                                          const bool propToHit,
+                                          MPlex5S* propErr = nullptr);
 
   void kalmanOperationPlane(const int kfOp,
                             const MPlexLS& psErr,

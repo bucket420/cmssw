@@ -177,6 +177,7 @@ namespace mkfit {
       // Reuse selectHitIndices() arrays -- used also in packModuleNormDir()
       m_XHitArr(imp, 0, 0) = idxs[i].hit_idx;
       m_XHitSize(imp, 0, 0) = 1;
+      m_XPropIdx[imp] = idxs[i].prop_idx;
 
       const Hit &hit = layer_of_hits.refHit(idxs[i].hit_idx);
       m_msErr.copyIn(imp, hit.errArray());
@@ -1674,6 +1675,15 @@ namespace mkfit {
     int nHitsAdded[NN]{};
     bool isTooLargeCluster[NN]{false};
 
+    // Keep the state propagated to the plane of each accepted hit for the update, which propagates with the
+    // inter-layer flags: only if they are those used here.
+    const PropagationFlags &pf_chi2 = m_prop_config->finding_intra_layer_pflags;
+    const PropagationFlags &pf_upd = m_prop_config->finding_inter_layer_pflags;
+    const bool keep_prop = Config::usePropToPlane && pf_chi2.use_param_b_field == pf_upd.use_param_b_field &&
+                           pf_chi2.apply_material == pf_upd.apply_material &&
+                           pf_chi2.copy_input_state_on_fail == pf_upd.copy_input_state_on_fail &&
+                           pf_chi2.use_fit_b_field == pf_upd.use_fit_b_field;
+
     // The candidates' state at their last hit (iC); the error is already curvilinear (m_ErrCurv[iC]).
 
     for (int hit_cnt = 0; hit_cnt < maxSize; ++hit_cnt) {
@@ -1695,6 +1705,7 @@ namespace mkfit {
       //now compute the chi2 of track state vs hit
       MPlexQF outChi2{0.0f};
       MPlexLV propPar{0.0f};
+      MPlex5S propErr;
       clearFailFlag();
 
       if /*constexpr*/ (Config::usePropToPlane) {
@@ -1714,7 +1725,8 @@ namespace mkfit {
                                            m_FailFlag,
                                            N_proc,
                                            m_prop_config->finding_intra_layer_pflags,
-                                           m_prop_config->finding_requires_propagation_to_hit_pos);
+                                           m_prop_config->finding_requires_propagation_to_hit_pos,
+                                           &propErr);
       } else {
         (*fnd_foos.m_compute_chi2_foo)(m_Err[iP],
                                        m_Par[iP],
@@ -1802,6 +1814,14 @@ namespace mkfit {
               tmpList.chi2 = m_Chi2(itrack, 0, 0) + chi2;
               tmpList.chi2_hit = chi2;
               tmpList.score = getScoreStruct(m_steering_params->m_track_scorer, tmpList);
+              tmpList.propIdx = -1;
+              if (keep_prop) {
+                // The update starts from here if the hit is kept (updateWithLoadedHit).
+                tmpList.propIdx = m_prop_states.size();
+                PropState &ps = m_prop_states.emplace_back();
+                propPar.copyOut(itrack, ps.par);
+                propErr.copyOut(itrack, ps.err);
+              }
               cloner.add_cand(m_SeedIdx(itrack, 0, 0) - offset, tmpList);
 
               dprint("  adding hit with hit_cnt=" << hit_cnt << " for trkIdx=" << tmpList.trkIdx
@@ -1868,6 +1888,7 @@ namespace mkfit {
       tmpList.chi2 = m_Chi2(itrack, 0, 0);
       tmpList.chi2_hit = 0;
       tmpList.score = getScoreStruct(m_steering_params->m_track_scorer, tmpList);
+      tmpList.propIdx = -1;
       cloner.add_cand(m_SeedIdx(itrack, 0, 0) - offset, tmpList);
       dprint("adding invalid hit " << fake_hit_idx);
     }
@@ -1884,6 +1905,18 @@ namespace mkfit {
     if /*constexpr*/ (Config::usePropToPlane) {
       MPlexHV norm, dir, pnt;
       packModuleNormDirPnt(layer_of_hits, 0, norm, dir, pnt, N_proc);
+      // The chi2 step (findCandidatesCloneEngine) has propagated the same candidate to the same plane with the same
+      // flags: start from its state on the plane instead of propagating again.
+      bool have_prop = true;
+      for (int i = 0; i < N_proc; ++i)
+        have_prop = have_prop && m_XPropIdx[i] >= 0;
+      if (have_prop) {
+        for (int i = 0; i < N_proc; ++i) {
+          const PropState &ps = m_prop_states[m_XPropIdx[i]];
+          m_Par[iP].copyIn(i, ps.par);
+          m_ErrCurv[iP].copyIn(i, ps.err);
+        }
+      }
       kalmanPropagateAndUpdatePlane(m_ErrCurv[iP],
                                     m_Par[iP],
                                     m_Chg,
@@ -1897,7 +1930,7 @@ namespace mkfit {
                                     m_FailFlag,
                                     N_proc,
                                     m_prop_config->finding_inter_layer_pflags,
-                                    m_prop_config->finding_requires_propagation_to_hit_pos);
+                                    m_prop_config->finding_requires_propagation_to_hit_pos && !have_prop);
     } else {
       (*fnd_foos.m_update_param_foo)(m_Err[iP],
                                      m_Par[iP],

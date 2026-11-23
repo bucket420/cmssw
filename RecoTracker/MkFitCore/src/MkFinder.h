@@ -31,8 +31,10 @@ namespace mkfit {
     int cand_idx;
     int hit_idx;
     int ovlp_idx;
+    int prop_idx;  // MkFinder::m_prop_states entry of the hit, -1 if none
 
-    UpdateIndices(int si, int ci, int hi, int oi) : seed_idx(si), cand_idx(ci), hit_idx(hi), ovlp_idx(oi) {}
+    UpdateIndices(int si, int ci, int hi, int oi, int pi = -1)
+        : seed_idx(si), cand_idx(ci), hit_idx(hi), ovlp_idx(oi), prop_idx(pi) {}
   };
 
   class MkFinder : public MkBase {
@@ -365,6 +367,16 @@ namespace mkfit {
     // CCS is needed (overlap chi2).
     MPlex5S m_ErrCurv[2];
     bool m_cand_err_curv = false;
+
+    // State propagated to the module plane of each hit accepted by the prop-to-plane chi2 step of the clone engine,
+    // for the update step to start from (it would repeat the same propagation: same candidate, plane and flags).
+    // Filled per layer; indexed by IdxChi2List::propIdx and UpdateIndices::prop_idx.
+    struct PropState {
+      float par[6];
+      float err[15];
+    };
+    std::vector<PropState> m_prop_states;
+    int m_XPropIdx[NN];
 
     // An idea: Do propagation to hit in FindTracksXYZZ functions.
     // Have some state / functions here that make this short to write.
