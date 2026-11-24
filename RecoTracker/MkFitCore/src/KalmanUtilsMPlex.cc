@@ -1502,7 +1502,10 @@ namespace mkfit {
       RotateVectorOnPlane(rot, un, u);
       MPlexHV v;
       RotateVectorOnPlane(rot, vn, v);
-      MPlex55 jacCurv2Loc(0.f);
+      // Zeroed for the dense product of the CCS path; the curvilinear similarity reads only the elements set below.
+      MPlex55 jacCurv2Loc;
+      if constexpr (std::is_same_v<ErrT, MPlexLS>)
+        jacCurv2Loc.setVal(0.f);
 #pragma omp simd
       for (int n = 0; n < NN; ++n) {
         const float bF = bFld(n, 0, 0);
@@ -1783,8 +1786,10 @@ namespace mkfit {
 
       //now we need the jacobian to convert from curvilinear to CCS
       // code from TrackState::jacobianCurvilinearToCCS
-      MPlex65 jacCurv2CCS(0.f);
+      // Used only for a CCS error.
+      MPlex65 jacCurv2CCS;
       if constexpr (std::is_same_v<ErrT, MPlexLS>) {
+        jacCurv2CCS.setVal(0.f);
 #pragma omp simd
         for (int n = 0; n < NN; ++n) {
           jacCurv2CCS(n, 0, 3) = -sinP(n, 0, 0);
@@ -1828,7 +1833,10 @@ namespace mkfit {
         vn(n, 0, 0) = -tn(n, 0, 2) * un(n, 0, 1);
         vn(n, 0, 1) = tn(n, 0, 2) * un(n, 0, 0);
       }
-      MPlex55 jacLoc2Curv(0.f);
+      // Zeroed for the dense product of the CCS path; the curvilinear similarity reads only the elements set below.
+      MPlex55 jacLoc2Curv;
+      if constexpr (std::is_same_v<ErrT, MPlexLS>)
+        jacLoc2Curv.setVal(0.f);
 #pragma omp simd
       for (int n = 0; n < NN; ++n) {
         const float bF = bFld(n, 0, 0);

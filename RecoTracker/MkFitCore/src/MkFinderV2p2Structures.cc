@@ -57,8 +57,11 @@ namespace mkfit {
     } else {
       path_from_perp(in, t, sPerp, s);
     }
-    // The transport Jacobian in the coordinates of the error: 6x6 CCS or 5x5 curvilinear.
-    std::conditional_t<std::is_same_v<ErrT, MPlex5S>, MPlex55, MPlexLL> J{0.0f};
+    // The transport Jacobian in the coordinates of the error: 6x6 CCS or 5x5 curvilinear, of which jacobian()
+    // sets every element.
+    std::conditional_t<std::is_same_v<ErrT, MPlex5S>, MPlex55, MPlexLL> J;
+    if constexpr (!std::is_same_v<ErrT, MPlex5S>)
+      J.setVal(0.0f);
     jacobian(in, t, propPar, f, s, J);
     transport_cov(J, tsE, propE);
     if (pf.apply_material) {

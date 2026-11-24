@@ -185,9 +185,8 @@ namespace {
     const MPF v21 = -cosT * u22;
     const MPF v22 = cosT * u21;
     const MPF v23 = sinT;
-    // now prepare the transport matrix
-
-    errorPropCurv.setVal(0.0f);
+    // now prepare the transport matrix: every element is set below, the structural zeros too, so no zero fill
+    // first (on 8 lanes the fill is a rep stos of 800 bytes, a third of the time of this function)
     //   1/p - doesn't change since |p1| = |p2|
     errorPropCurv.aij(0, 0) = 1.f;
     for (int i = 1; i < 5; ++i)
@@ -239,6 +238,10 @@ namespace {
         const float fourthOrder51 = 1.f / 8 * h3 * s4 * qbp2 * temp3;
         errorPropCurv(n, 4, 0) = secondOrder51 + (thirdOrder51 + fourthOrder51);
       }
+    }
+    for (int n = N_proc; n < NN; ++n) {
+      errorPropCurv(n, 3, 0) = 0.f;
+      errorPropCurv(n, 4, 0) = 0.f;
     }
 
     errorPropCurv.aij(3, 1) = (sint * (v11 * u21 + v12 * u22) + omcost * (-v12 * u21 + v11 * u22)) / q;
@@ -727,7 +730,10 @@ namespace mkfit {
       const TrackRef in{inPar, inChg, N_proc};
       const PlaneRef pl{plPnt, plNrm};
 
-      PlaneJacFor<ErrT> errorProp{0.0f};
+      // jacobian() sets every element of the curvilinear Jacobian
+      PlaneJacFor<ErrT> errorProp;
+      if constexpr (!std::is_same_v<ErrT, MPlex5S>)
+        errorProp.setVal(0.0f);
       outFailFlag.setVal(0.f);
 
       FieldAt f;

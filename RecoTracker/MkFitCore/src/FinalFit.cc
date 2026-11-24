@@ -469,7 +469,10 @@ namespace mkfit::final_fit {
       const TrackRef in{inPar, inChg, N_proc};
       const PlaneRef pl{plPnt, plNrm};
 
-      JacFor<ErrT> errorProp{0.0f};
+      // jacobian() sets every element of the curvilinear Jacobian
+      JacFor<ErrT> errorProp;
+      if constexpr (!std::is_same_v<ErrT, MPlex5S>)
+        errorProp.setVal(0.0f);
       MPlexQF s{0.0f};
       outFailFlag.setVal(0.f);
 
@@ -526,7 +529,9 @@ namespace mkfit::final_fit {
       StartTrig t;
       start_trig(in, t);
       MPlexLV parJ{0.0f};
-      JacFor<ErrT> errorProp{0.0f};
+      JacFor<ErrT> errorProp;
+      if constexpr (!std::is_same_v<ErrT, MPlex5S>)
+        errorProp.setVal(0.0f);
       drift(in, t, fW, sTot, parJ);
       jacobian(in, t, parJ, fW, sTot, errorProp);
 
