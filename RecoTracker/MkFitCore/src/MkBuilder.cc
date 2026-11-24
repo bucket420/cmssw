@@ -961,10 +961,6 @@ namespace mkfit {
 
         assert(layer_plan_it.is_pickup_only());
 
-        // The V2p2 search works with CCS errors.
-        if (Config::useCurvTrackErrors)
-          convertCandErrs(eoccs, start_seed, end_seed, false);
-
         mkfndr->setup(m_job, eoccs, start_seed, end_seed, layer_plan_it, m_event);
 
         mkfndr->awaken_candidates();
@@ -1008,9 +1004,6 @@ namespace mkfit {
               true,
               true);
         }
-
-        if (Config::useCurvTrackErrors)
-          convertCandErrs(eoccs, start_seed, end_seed, true);
       });  // end parallel-for over chunk of seeds within region
     });    // end of parallel-for-each over eta regions
 
@@ -1701,11 +1694,8 @@ namespace mkfit {
       if (Config::usePropToPlane || m_cands_from_v2p2) {
         // input tracks
         mkfndr->bkFitInputTracks(eoccs, icand, end);
-        // fit tracks back to first layer (the V2p2 fit works with CCS errors, the prop-to-plane fit with
-        // curvilinear ones)
+        // fit tracks back to first layer
         if (m_cands_from_v2p2) {
-          if (Config::useCurvTrackErrors)
-            mkfndr->trackErrsToCCS(MkBase::iC);
           mkfndr->bkFitFitTracksV2p2(m_job->m_event_of_hits, st_par, end - icand, chi_debug);
         } else
           mkfndr->bkFitFitTracksProp2Plane(m_job->m_event_of_hits, st_par, end - icand, chi_debug);
